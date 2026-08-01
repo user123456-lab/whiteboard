@@ -8,7 +8,7 @@ import { CircleTool } from '../tools/CircleTool';
 import { ArrowTool } from '../tools/ArrowTool';
 import { TextTool } from '../tools/TextTool';
 import { SelectTool } from '../tools/SelectTool';
-import { EraserTool } from '../tools/EraserTool';
+import { EraserTool, type SweepResult } from '../tools/EraserTool';
 
 export class ToolManager {
   private brushTool = new BrushTool();
@@ -80,7 +80,7 @@ export class ToolManager {
 
     if (store.activeTool === 'eraser') {
       if (this.isDrawing) {
-        this.tryEraseAtTarget(e.target);
+        this.applySweepErase(pos);
       }
       return;
     }
@@ -200,6 +200,26 @@ export class ToolManager {
     this.erasedInStroke.add(shapeId);
     store.deleteShape(shapeId);
     sendMessage(getWs(), 'shape_deleted', { shapeId }, store.userId);
+  }
+
+  private applySweepErase(pos: { x: number; y: number }): void {
+    const store = useCanvasStore.getState();
+    const result: SweepResult = this.eraserTool.sweepErase(pos, store, this.erasedInStroke);
+
+    for (const upd of result.shapesToUpdate) {
+      store.updateShape(upd.shapeId, { points: upd.points });
+      sendMessage(getWs(), 'shape_updated', {
+        shapeId: upd.shapeId,
+        changes: { points: upd.points },
+      }, store.userId);
+    }
+
+    for (const shapeId of result.shapesToDelete) {
+      if (this.erasedInStroke.has(shapeId)) continue;
+      this.erasedInStroke.add(shapeId);
+      store.deleteShape(shapeId);
+      sendMessage(getWs(), 'shape_deleted', { shapeId }, store.userId);
+    }
   }
 
   cancelAll(): void {
