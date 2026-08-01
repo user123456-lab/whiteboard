@@ -21,6 +21,7 @@ export class ToolManager {
 
   private isDrawing = false;
   private erasedInStroke: Set<string> = new Set();
+  private lastEraserPos: { x: number; y: number } | null = null;
   private previewLayer: Konva.Layer | null = null;
   private stage: Konva.Stage | null = null;
 
@@ -57,6 +58,7 @@ export class ToolManager {
     if (store.activeTool === 'eraser') {
       this.isDrawing = true;
       this.erasedInStroke.clear();
+      this.lastEraserPos = pos;
       this.tryEraseAtTarget(e.target);
       return;
     }
@@ -108,6 +110,7 @@ export class ToolManager {
     if (store.activeTool === 'eraser') {
       this.isDrawing = false;
       this.erasedInStroke.clear();
+      this.lastEraserPos = null;
       return;
     }
 
@@ -204,7 +207,10 @@ export class ToolManager {
 
   private applySweepErase(pos: { x: number; y: number }): void {
     const store = useCanvasStore.getState();
-    const result: SweepResult = this.eraserTool.sweepErase(pos, store, this.erasedInStroke);
+    const prev = this.lastEraserPos;
+    this.lastEraserPos = pos;
+
+    const result: SweepResult = this.eraserTool.sweepErase(pos, prev, store, this.erasedInStroke);
 
     for (const upd of result.shapesToUpdate) {
       store.updateShape(upd.shapeId, { points: upd.points });
@@ -212,6 +218,11 @@ export class ToolManager {
         shapeId: upd.shapeId,
         changes: { points: upd.points },
       }, store.userId);
+    }
+
+    for (const newShape of result.shapesToCreate) {
+      store.addShape(newShape);
+      sendMessage(getWs(), 'shape_created', { shape: newShape }, store.userId);
     }
 
     for (const shapeId of result.shapesToDelete) {
