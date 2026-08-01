@@ -210,7 +210,7 @@ export class ToolManager {
     const prev = this.lastEraserPos;
     this.lastEraserPos = pos;
 
-    const result: SweepResult = this.eraserTool.sweepErase(pos, prev, store, this.erasedInStroke);
+    const result: SweepResult = this.eraserTool.sweepErase(pos, prev, store, this.erasedInStroke, store.eraserRadius);
 
     for (const upd of result.shapesToUpdate) {
       store.updateShape(upd.shapeId, { points: upd.points });

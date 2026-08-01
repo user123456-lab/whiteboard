@@ -7,6 +7,7 @@ export interface CanvasState {
   activeTool: ToolType;
   toolColor: string;
   toolWidth: number;
+  eraserRadius: number;
   userId: string;
   userName: string;
   roomId: string | null;
@@ -25,6 +26,7 @@ export interface CanvasState {
   setActiveTool: (tool: ToolType) => void;
   setToolColor: (color: string) => void;
   setToolWidth: (width: number) => void;
+  setEraserRadius: (radius: number) => void;
   undoOwn: (userId: string) => string | null;
   setUsers: (users: UserInfo[]) => void;
   addUser: (user: UserInfo) => void;
@@ -40,6 +42,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   activeTool: 'select',
   toolColor: '#3B82F6',
   toolWidth: 2,
+  eraserRadius: 10,
   userId: '',
   userName: '',
   roomId: null,
@@ -71,6 +74,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   setActiveTool: (tool) => set({ activeTool: tool, selectedId: null }),
   setToolColor: (color) => set({ toolColor: color }),
   setToolWidth: (width) => set({ toolWidth: width }),
+  setEraserRadius: (radius) => set({ eraserRadius: radius }),
 
   undoOwn: (userId) => {
     const { shapes } = get();

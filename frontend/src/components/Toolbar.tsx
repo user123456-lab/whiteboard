@@ -19,6 +19,8 @@ export function Toolbar() {
   const setToolColor = useCanvasStore((s) => s.setToolColor);
   const toolWidth = useCanvasStore((s) => s.toolWidth);
   const setToolWidth = useCanvasStore((s) => s.setToolWidth);
+  const eraserRadius = useCanvasStore((s) => s.eraserRadius);
+  const setEraserRadius = useCanvasStore((s) => s.setEraserRadius);
   const userId = useCanvasStore((s) => s.userId);
 
   const handleUndo = () => {
@@ -48,30 +50,49 @@ export function Toolbar() {
 
       <div className="border-t border-gray-700 my-1" />
 
-      {/* Color picker */}
-      <div className="flex items-center justify-center py-1">
-        <input
-          type="color"
-          value={toolColor}
-          onChange={(e) => setToolColor(e.target.value)}
-          className="w-8 h-8 rounded cursor-pointer border-0 bg-transparent"
-          title="Color"
-        />
-      </div>
+      {activeTool === 'eraser' ? (
+        /* Eraser size control */
+        <div className="flex flex-col items-center gap-1 py-1">
+          <span className="text-[10px] text-gray-500">Size</span>
+          <input
+            type="range"
+            min="3"
+            max="40"
+            value={eraserRadius}
+            onChange={(e) => setEraserRadius(Number(e.target.value))}
+            className="w-20 h-1 accent-orange-400"
+            title="Eraser size"
+          />
+          <span className="text-xs text-gray-400">{eraserRadius}px</span>
+        </div>
+      ) : (
+        <>
+          {/* Color picker */}
+          <div className="flex items-center justify-center py-1">
+            <input
+              type="color"
+              value={toolColor}
+              onChange={(e) => setToolColor(e.target.value)}
+              className="w-8 h-8 rounded cursor-pointer border-0 bg-transparent"
+              title="Color"
+            />
+          </div>
 
-      {/* Stroke width */}
-      <div className="flex items-center justify-center gap-1">
-        <input
-          type="range"
-          min="1"
-          max="20"
-          value={toolWidth}
-          onChange={(e) => setToolWidth(Number(e.target.value))}
-          className="w-20 h-1 accent-blue-500"
-          title="Stroke width"
-        />
-        <span className="text-xs text-gray-400 w-6 text-center">{toolWidth}</span>
-      </div>
+          {/* Stroke width */}
+          <div className="flex items-center justify-center gap-1">
+            <input
+              type="range"
+              min="1"
+              max="20"
+              value={toolWidth}
+              onChange={(e) => setToolWidth(Number(e.target.value))}
+              className="w-20 h-1 accent-blue-500"
+              title="Stroke width"
+            />
+            <span className="text-xs text-gray-400 w-6 text-center">{toolWidth}</span>
+          </div>
+        </>
+      )}
 
       <div className="border-t border-gray-700 my-1" />
 

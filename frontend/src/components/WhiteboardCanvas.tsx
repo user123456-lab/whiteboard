@@ -8,6 +8,15 @@ import type { Shape } from '../types';
 
 const toolManager = new ToolManager();
 
+function buildEraserCursor(radius: number): string {
+  const size = Math.max(24, radius * 2 + 8);
+  const cx = size / 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">`
+    + `<circle cx="${cx}" cy="${cx}" r="${radius}" fill="none" stroke="white" stroke-width="1.5" opacity="0.9"/>`
+    + `</svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${cx} ${cx}, crosshair`;
+}
+
 export function WhiteboardCanvas() {
   const stageRef = useRef<Konva.Stage>(null);
   const previewLayerRef = useRef<Konva.Layer>(null);
@@ -16,6 +25,7 @@ export function WhiteboardCanvas() {
   const shapes = useCanvasStore((s) => s.shapes);
   const selectedId = useCanvasStore((s) => s.selectedId);
   const activeTool = useCanvasStore((s) => s.activeTool);
+  const eraserRadius = useCanvasStore((s) => s.eraserRadius);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -133,9 +143,7 @@ export function WhiteboardCanvas() {
       onMouseUp={(e) => toolManager.handleMouseUp(e)}
       style={{
         background: '#1a1a2e',
-        cursor: activeTool === 'eraser'
-          ? 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'16\' height=\'16\'><circle cx=\'8\' cy=\'8\' r=\'6\' fill=\'none\' stroke=\'white\' stroke-width=\'2\'/></svg>") 8 8, crosshair'
-          : 'default',
+        cursor: activeTool === 'eraser' ? buildEraserCursor(eraserRadius) : 'default',
       }}
       onContextMenu={(e) => e.evt.preventDefault()}
     >
