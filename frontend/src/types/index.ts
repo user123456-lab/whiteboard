@@ -1,4 +1,4 @@
-export type ToolType = 'select' | 'brush' | 'rectangle' | 'circle' | 'arrow' | 'text';
+export type ToolType = 'select' | 'brush' | 'rectangle' | 'circle' | 'arrow' | 'text' | 'eraser';
 
 export type ShapeType = 'brush' | 'rectangle' | 'circle' | 'arrow' | 'text';
 

@@ -8,6 +8,7 @@ import { CircleTool } from '../tools/CircleTool';
 import { ArrowTool } from '../tools/ArrowTool';
 import { TextTool } from '../tools/TextTool';
 import { SelectTool } from '../tools/SelectTool';
+import { EraserTool } from '../tools/EraserTool';
 
 export class ToolManager {
   private brushTool = new BrushTool();
@@ -16,8 +17,10 @@ export class ToolManager {
   private arrowTool = new ArrowTool();
   private textTool = new TextTool();
   private selectTool = new SelectTool();
+  private eraserTool = new EraserTool();
 
   private isDrawing = false;
+  private erasedInStroke: Set<string> = new Set();
   private previewLayer: Konva.Layer | null = null;
   private stage: Konva.Stage | null = null;
 
@@ -51,6 +54,13 @@ export class ToolManager {
       return;
     }
 
+    if (store.activeTool === 'eraser') {
+      this.isDrawing = true;
+      this.erasedInStroke.clear();
+      this.tryEraseAtTarget(e.target);
+      return;
+    }
+
     store.setSelectedId(null);
     this.isDrawing = true;
     this.getActiveDrawingTool()?.onMouseDown(pos, store, this.previewLayer!);
@@ -65,6 +75,13 @@ export class ToolManager {
 
     if (store.activeTool === 'select') {
       this.selectTool.onMouseMove(pos, store, this.previewLayer!);
+      return;
+    }
+
+    if (store.activeTool === 'eraser') {
+      if (this.isDrawing) {
+        this.tryEraseAtTarget(e.target);
+      }
       return;
     }
 
@@ -85,6 +102,12 @@ export class ToolManager {
         }, store.userId);
       }
       this.selectTool.onMouseUp(pos, store, this.previewLayer!);
+      return;
+    }
+
+    if (store.activeTool === 'eraser') {
+      this.isDrawing = false;
+      this.erasedInStroke.clear();
       return;
     }
 
@@ -141,6 +164,7 @@ export class ToolManager {
       case 'c': store.setActiveTool('circle'); break;
       case 'a': store.setActiveTool('arrow'); break;
       case 't': store.setActiveTool('text'); break;
+      case 'e': store.setActiveTool('eraser'); break;
       case 'escape':
         store.setSelectedId(null);
         this.cancelAll();
@@ -167,8 +191,20 @@ export class ToolManager {
     return pos;
   }
 
+  private tryEraseAtTarget(target: Konva.Shape | Konva.Stage | null): void {
+    const store = useCanvasStore.getState();
+    const shapeId = this.eraserTool.tryErase(target, this.stage, store);
+    if (!shapeId) return;
+    if (this.erasedInStroke.has(shapeId)) return;
+
+    this.erasedInStroke.add(shapeId);
+    store.deleteShape(shapeId);
+    sendMessage(getWs(), 'shape_deleted', { shapeId }, store.userId);
+  }
+
   cancelAll(): void {
     this.isDrawing = false;
+    this.erasedInStroke.clear();
     this.brushTool.cancel();
     this.rectangleTool.cancel();
     this.circleTool.cancel();

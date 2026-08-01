@@ -9,6 +9,7 @@ const tools: { type: ToolType; label: string; shortcut: string; icon: string }[]
   { type: 'circle', label: 'Circle', shortcut: 'C', icon: '○' },
   { type: 'arrow', label: 'Arrow', shortcut: 'A', icon: '→' },
   { type: 'text', label: 'Text', shortcut: 'T', icon: 'T' },
+  { type: 'eraser', label: 'Eraser', shortcut: 'E', icon: '⌫' },
 ];
 
 export function Toolbar() {

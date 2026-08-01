@@ -15,6 +15,7 @@ export function WhiteboardCanvas() {
 
   const shapes = useCanvasStore((s) => s.shapes);
   const selectedId = useCanvasStore((s) => s.selectedId);
+  const activeTool = useCanvasStore((s) => s.activeTool);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -130,7 +131,12 @@ export function WhiteboardCanvas() {
       }}
       onMouseMove={(e) => toolManager.handleMouseMove(e)}
       onMouseUp={(e) => toolManager.handleMouseUp(e)}
-      style={{ background: '#1a1a2e' }}
+      style={{
+        background: '#1a1a2e',
+        cursor: activeTool === 'eraser'
+          ? 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'16\' height=\'16\'><circle cx=\'8\' cy=\'8\' r=\'6\' fill=\'none\' stroke=\'white\' stroke-width=\'2\'/></svg>") 8 8, crosshair'
+          : 'default',
+      }}
       onContextMenu={(e) => e.evt.preventDefault()}
     >
       {/* Grid Layer */}
