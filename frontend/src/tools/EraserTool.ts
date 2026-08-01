@@ -66,9 +66,9 @@ export class EraserTool {
             });
           }
         }
-      } else if (!excludeIds.has(shape.id) && this.shapeIntersectsCircle(shape, pos.x, pos.y, eraserRadius)) {
-        result.shapesToDelete.push(shape.id);
       }
+      // Geometric shapes: partial erasing not feasible for vector rect/circle/arrow/text.
+      // Only deleted on click (tryErase), NOT on sweep.
     }
 
     return result;
@@ -124,7 +124,7 @@ export class EraserTool {
           const firstY = portion[1];
           const gap = Math.sqrt((firstX - lastX) ** 2 + (firstY - lastY) ** 2);
 
-          if (gap < radius * 0.5) {
+          if (gap < 1e-6) {
             // Continuous: append
             currentFrag.push(...portion.slice(2));
           } else {
