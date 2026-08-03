@@ -18,6 +18,7 @@ export function RoomPanel() {
   const userId = useCanvasStore((s) => s.userId);
   const userName = useCanvasStore((s) => s.userName);
   const wsConnected = useCanvasStore((s) => s.wsConnected);
+  const wsReconnecting = useCanvasStore((s) => s.wsReconnecting);
 
   const [joinInput, setJoinInput] = useState('');
   const [nameInput, setNameInput] = useState(() => {
@@ -51,6 +52,10 @@ export function RoomPanel() {
     setRoomId(null);
     useCanvasStore.getState().loadShapes([]);
     useCanvasStore.getState().setUsers([]);
+    useCanvasStore.getState().setSelectedId(null);
+    // Clear remote cursors
+    const store = useCanvasStore.getState();
+    Object.keys(store.remoteCursors).forEach(k => store.removeRemoteCursor(k));
   };
 
   const handleCopyLink = () => {
@@ -63,9 +68,21 @@ export function RoomPanel() {
       <div className="fixed top-4 left-4 bg-gray-800/90 backdrop-blur rounded-xl p-3 shadow-xl border border-gray-700 z-50 min-w-[200px]">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+            {wsConnected ? (
+              <div className="w-2 h-2 rounded-full bg-green-500" />
+            ) : wsReconnecting ? (
+              <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
+            ) : (
+              <div className="w-2 h-2 rounded-full bg-red-500" />
+            )}
             <span className="text-sm text-gray-300">
-              Room: <span className="text-white font-mono">{roomId}</span>
+              {wsConnected ? (
+                <>Room: <span className="text-white font-mono">{roomId}</span></>
+              ) : wsReconnecting ? (
+                <span className="text-yellow-400">Reconnecting...</span>
+              ) : (
+                <span className="text-red-400">Disconnected</span>
+              )}
             </span>
           </div>
         </div>

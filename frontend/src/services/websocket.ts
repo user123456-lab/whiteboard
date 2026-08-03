@@ -3,10 +3,25 @@ import { useCanvasStore } from '../store/useCanvasStore';
 
 let wsInstance: WebSocket | null = null;
 let throttleTimer = 0;
+let intentionalClose = false;
+let reconnectAttempts = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+const MAX_RECONNECT_ATTEMPTS = 10;
+const RECONNECT_BASE_DELAY = 1000;
 
 export function connect(roomId: string, userId: string, userName: string): WebSocket {
+  // Close existing connection cleanly
   if (wsInstance) {
+    intentionalClose = true;
     wsInstance.close();
+    wsInstance = null;
+  }
+
+  intentionalClose = false;
+  reconnectAttempts = 0;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
   }
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -18,6 +33,8 @@ export function connect(roomId: string, userId: string, userName: string): WebSo
 
   ws.onopen = () => {
     useCanvasStore.getState().setWsConnected(true);
+    useCanvasStore.getState().setWsReconnecting(false);
+    reconnectAttempts = 0;
   };
 
   ws.onmessage = (event) => {
@@ -30,8 +47,18 @@ export function connect(roomId: string, userId: string, userName: string): WebSo
   };
 
   ws.onclose = () => {
+    if (wsInstance === ws) {
+      wsInstance = null;
+    }
+    if (intentionalClose) {
+      useCanvasStore.getState().setWsConnected(false);
+      useCanvasStore.getState().setWsReconnecting(false);
+      return;
+    }
+    // Unexpected disconnect — start reconnect loop
     useCanvasStore.getState().setWsConnected(false);
-    wsInstance = null;
+    useCanvasStore.getState().setWsReconnecting(true);
+    scheduleReconnect(roomId, userId, userName);
   };
 
   ws.onerror = () => {
@@ -41,12 +68,26 @@ export function connect(roomId: string, userId: string, userName: string): WebSo
   return ws;
 }
 
+function scheduleReconnect(roomId: string, userId: string, userName: string): void {
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    useCanvasStore.getState().setWsReconnecting(false);
+    return;
+  }
+  // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s (capped at 30s)
+  const delay = Math.min(RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttempts), 30000);
+  reconnectAttempts++;
+  reconnectTimer = setTimeout(() => {
+    connect(roomId, userId, userName);
+  }, delay);
+}
+
+// handleMessage — keep EXACTLY the same as current (imports addRemoteShape, removeRemoteShape, etc.)
 function handleMessage(msg: WSMessage): void {
   const store = useCanvasStore.getState();
 
   switch (msg.type) {
     case 'shape_created':
-      store.addShape(msg.payload.shape as never);
+      store.addRemoteShape(msg.payload.shape as never);
       break;
 
     case 'shape_updated': {
@@ -57,7 +98,7 @@ function handleMessage(msg: WSMessage): void {
     }
 
     case 'shape_deleted':
-      store.deleteShape(msg.payload.shapeId as string);
+      store.removeRemoteShape(msg.payload.shapeId as string);
       break;
 
     case 'cursor_move':
@@ -87,27 +128,36 @@ function handleMessage(msg: WSMessage): void {
 export function sendMessage(ws: WebSocket | null, type: string, payload: object, userId: string): void {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-  // Throttle cursor moves to 100ms
   if (type === 'cursor_move') {
     const now = Date.now();
     if (now - throttleTimer < 100) return;
     throttleTimer = now;
   }
 
-  ws.send(
-    JSON.stringify({
-      type,
-      userId,
-      timestamp: Date.now(),
-      payload,
-    })
-  );
+  try {
+    ws.send(
+      JSON.stringify({
+        type,
+        userId,
+        timestamp: Date.now(),
+        payload,
+      })
+    );
+  } catch {
+    // Socket closed between check and send — ignore
+  }
 }
 
 export function disconnect(): void {
+  intentionalClose = true;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   if (wsInstance) {
-    wsInstance.close();
+    const ws = wsInstance;
     wsInstance = null;
+    ws.close();
   }
 }
 

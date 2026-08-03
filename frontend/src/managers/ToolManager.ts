@@ -11,6 +11,7 @@ import { SelectTool } from '../tools/SelectTool';
 import { EraserTool, type SweepResult } from '../tools/EraserTool';
 
 export class ToolManager {
+
   private brushTool = new BrushTool();
   private rectangleTool = new RectangleTool();
   private circleTool = new CircleTool();
@@ -34,38 +35,72 @@ export class ToolManager {
   }
 
   handleMouseDown(e: Konva.KonvaEventObject<MouseEvent>): void {
-    const store = useCanvasStore.getState();
-    const pos = this.getRelativePos(e);
+    try {
+      const store = useCanvasStore.getState();
+      const pos = this.getRelativePos(e);
 
-    if (store.activeTool === 'select') {
-      // Hit test shapes
-      const target = e.target;
-      if (target && target !== this.stage && target.attrs?.id) {
-        const shapeId = target.attrs.id as string;
-        const shape = store.shapes.find((s) => s.id === shapeId);
-        if (shape) {
-          store.setSelectedId(shapeId);
-          this.selectTool.setDraggedShape(shape);
+      if (store.activeTool === 'select') {
+        // Hit test shapes
+        const target = e.target;
+        if (target && target !== this.stage && target.attrs?.id) {
+          const shapeId = target.attrs.id as string;
+          const shape = store.shapes.find((s) => s.id === shapeId);
+          if (shape) {
+            if (shape.locked && shape.userId !== store.userId) {
+              store.setSelectedId(null);
+              this.selectTool.setDraggedShape(null);
+              return; // locked by someone else — can't select
+            }
+            store.setSelectedId(shapeId);
+            this.selectTool.setDraggedShape(shape);
+          }
+        } else {
+          store.setSelectedId(null);
+          this.selectTool.setDraggedShape(null);
         }
-      } else {
-        store.setSelectedId(null);
-        this.selectTool.setDraggedShape(null);
+        this.selectTool.onMouseDown(pos, store, this.previewLayer!);
+        return;
       }
-      this.selectTool.onMouseDown(pos, store, this.previewLayer!);
-      return;
-    }
 
-    if (store.activeTool === 'eraser') {
+      if (store.activeTool === 'eraser') {
+        this.isDrawing = true;
+        this.erasedInStroke.clear();
+        this.lastEraserPos = pos;
+        this.tryEraseAtTarget(e.target);
+        return;
+      }
+
+      // Text tool: click text → edit, click outside while editing → close, empty → create
+      if (store.activeTool === 'text') {
+        const target = e.target;
+        // Click on existing own text → enter edit (even on 2nd click of dblclick)
+        if (target && target !== this.stage && target.attrs?.id) {
+          const shapeId = target.attrs.id as string;
+          const shape = store.shapes.find((s) => s.id === shapeId);
+          if (shape && shape.type === 'text' && shape.userId === store.userId) {
+            store.setEditingTextId(shapeId);
+            return;
+          }
+        }
+        // Click outside while editing → close editor, don't create new
+        if (store.editingTextId) {
+          store.setEditingTextId(null);
+          return;
+        }
+        // Empty canvas → create new text
+        store.setSelectedId(null);
+        this.isDrawing = true;
+        this.textTool.onMouseDown(pos, store, this.previewLayer!);
+        return;
+      }
+
+      store.setSelectedId(null);
       this.isDrawing = true;
-      this.erasedInStroke.clear();
-      this.lastEraserPos = pos;
-      this.tryEraseAtTarget(e.target);
-      return;
+      this.getActiveDrawingTool()?.onMouseDown(pos, store, this.previewLayer!);
+    } catch (err) {
+      console.error('handleMouseDown error:', err);
+      this.isDrawing = false;
     }
-
-    store.setSelectedId(null);
-    this.isDrawing = true;
-    this.getActiveDrawingTool()?.onMouseDown(pos, store, this.previewLayer!);
   }
 
   handleMouseMove(e: Konva.KonvaEventObject<MouseEvent>): void {
@@ -92,45 +127,42 @@ export class ToolManager {
   }
 
   handleMouseUp(e: Konva.KonvaEventObject<MouseEvent>): void {
-    const store = useCanvasStore.getState();
-    const pos = this.getRelativePos(e);
+    try {
+      const store = useCanvasStore.getState();
+      const pos = this.getRelativePos(e);
 
-    if (store.activeTool === 'select') {
-      const shape = store.shapes.find((s) => s.id === store.selectedId);
+      if (store.activeTool === 'select') {
+        const shape = store.shapes.find((s) => s.id === store.selectedId);
+        if (shape && 'x' in shape && 'y' in shape) {
+          sendMessage(getWs(), 'shape_updated', {
+            shapeId: shape.id,
+            changes: { x: (shape as Shape & { x: number }).x, y: (shape as Shape & { y: number }).y },
+          }, store.userId);
+        }
+        this.selectTool.onMouseUp(pos, store, this.previewLayer!);
+        return;
+      }
+
+      if (store.activeTool === 'eraser') {
+        this.erasedInStroke.clear();
+        this.lastEraserPos = null;
+        return;
+      }
+
+      if (!this.isDrawing) return;
+
+      const shape = this.getActiveDrawingTool()?.onMouseUp(pos, store, this.previewLayer!) ?? null;
+
       if (shape) {
-        sendMessage(getWs(), 'shape_updated', {
-          shapeId: shape.id,
-          changes: { x: (shape as Shape & { x: number }).x, y: (shape as Shape & { y: number }).y },
-        }, store.userId);
+        store.addShape(shape);
+        sendMessage(getWs(), 'shape_created', { shape }, store.userId);
+        // Text tool: immediately enter edit mode after creating text
+        if (shape.type === 'text') {
+          store.setEditingTextId(shape.id);
+        }
       }
-      this.selectTool.onMouseUp(pos, store, this.previewLayer!);
-      return;
-    }
-
-    if (store.activeTool === 'eraser') {
+    } finally {
       this.isDrawing = false;
-      this.erasedInStroke.clear();
-      this.lastEraserPos = null;
-      return;
-    }
-
-    if (!this.isDrawing) return;
-    this.isDrawing = false;
-
-    let shape: Shape | null = null;
-
-    if (store.activeTool === 'text') {
-      const text = window.prompt('Enter text:');
-      if (text) {
-        shape = this.textTool.createText(pos.x, pos.y, text, store);
-      }
-    } else {
-      shape = this.getActiveDrawingTool()?.onMouseUp(pos, store, this.previewLayer!) ?? null;
-    }
-
-    if (shape) {
-      store.addShape(shape);
-      sendMessage(getWs(), 'shape_created', { shape }, store.userId);
     }
   }
 
@@ -147,6 +179,14 @@ export class ToolManager {
         }
         return;
       }
+      if ((e.key === 'z' && e.shiftKey) || e.key === 'y' || e.key === 'Y') {
+        e.preventDefault();
+        const shape = store.redoOwn(store.userId);
+        if (shape) {
+          sendMessage(getWs(), 'shape_created', { shape }, store.userId);
+        }
+        return;
+      }
       return;
     }
 
@@ -155,19 +195,31 @@ export class ToolManager {
       case 'backspace':
         if (store.selectedId) {
           const shape = store.shapes.find((s) => s.id === store.selectedId);
-          if (shape && (shape.userId === store.userId || !shape.userId)) {
+          if (shape && (shape.userId === store.userId || (!shape.userId && !shape.locked))) {
             store.deleteShape(shape.id);
             sendMessage(getWs(), 'shape_deleted', { shapeId: shape.id }, store.userId);
           }
         }
         break;
-      case 'v': store.setActiveTool('select'); break;
-      case 'b': store.setActiveTool('brush'); break;
-      case 'r': store.setActiveTool('rectangle'); break;
-      case 'c': store.setActiveTool('circle'); break;
-      case 'a': store.setActiveTool('arrow'); break;
-      case 't': store.setActiveTool('text'); break;
-      case 'e': store.setActiveTool('eraser'); break;
+      case 'v': this.cancelAll(); store.setActiveTool('select'); break;
+      case 'b': this.cancelAll(); store.setActiveTool('brush'); break;
+      case 'r': this.cancelAll(); store.setActiveTool('rectangle'); break;
+      case 'c': this.cancelAll(); store.setActiveTool('circle'); break;
+      case 'a': this.cancelAll(); store.setActiveTool('arrow'); break;
+      case 't': this.cancelAll(); store.setActiveTool('text'); break;
+      case 'e': this.cancelAll(); store.setActiveTool('eraser'); break;
+      case 'l':
+        if (store.selectedId) {
+          const shape = store.shapes.find((s) => s.id === store.selectedId);
+          if (shape && shape.userId === store.userId) {
+            const newLocked = store.toggleLock(shape.id);
+            sendMessage(getWs(), 'shape_updated', {
+              shapeId: shape.id,
+              changes: { locked: newLocked },
+            }, store.userId);
+          }
+        }
+        break;
       case 'escape':
         store.setSelectedId(null);
         this.cancelAll();
@@ -182,6 +234,7 @@ export class ToolManager {
       case 'rectangle': return this.rectangleTool;
       case 'circle': return this.circleTool;
       case 'arrow': return this.arrowTool;
+      case 'text': return this.textTool;
       default: return null;
     }
   }
@@ -240,6 +293,8 @@ export class ToolManager {
     this.rectangleTool.cancel();
     this.circleTool.cancel();
     this.arrowTool.cancel();
+    this.textTool.cancel();
+    useCanvasStore.getState().setEditingTextId(null);
     this.selectTool.cancel();
     this.previewLayer?.destroyChildren();
     this.previewLayer?.batchDraw();

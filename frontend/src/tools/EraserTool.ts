@@ -26,6 +26,7 @@ export class EraserTool {
     const shape = store.shapes.find((s) => s.id === shapeId);
     if (!shape) return null;
     if (!this.canErase(shape, store.userId)) return null;
+    if (shape.locked && shape.userId !== store.userId) return null;
     return shapeId;
   }
 
@@ -45,6 +46,7 @@ export class EraserTool {
 
     for (const shape of store.shapes) {
       if (!this.canErase(shape, store.userId)) continue;
+      if (shape.locked && shape.userId !== store.userId) continue;
 
       if (shape.type === 'brush') {
         if (excludeIds.has(shape.id)) continue;

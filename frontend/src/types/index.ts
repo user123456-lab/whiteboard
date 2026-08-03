@@ -10,6 +10,7 @@ export interface BaseShape {
   strokeWidth: number;
   createdAt: number;
   version?: number;
+  locked?: boolean;
 }
 
 export interface BrushShape extends BaseShape {

@@ -3,16 +3,20 @@ import type { TextShape } from '../types';
 import type { CanvasState } from '../store/useCanvasStore';
 
 export class TextTool {
+  private isPlacing = false;
+
   onMouseDown(_pos: { x: number; y: number }, _store: CanvasState, _layer: Konva.Layer): void {
-    // no-op
+    this.isPlacing = true;
   }
 
   onMouseMove(_pos: { x: number; y: number }, _store: CanvasState, _layer: Konva.Layer): void {
     // no-op
   }
 
-  onMouseUp(_pos: { x: number; y: number }, _store: CanvasState, _layer: Konva.Layer): null {
-    return null;
+  onMouseUp(pos: { x: number; y: number }, store: CanvasState, _layer: Konva.Layer): TextShape | null {
+    if (!this.isPlacing) return null;
+    this.isPlacing = false;
+    return this.createText(pos.x, pos.y, 'Text', store);
   }
 
   createText(x: number, y: number, text: string, store: CanvasState): TextShape {
@@ -23,10 +27,14 @@ export class TextTool {
       x,
       y,
       text,
-      fontSize: 18,
+      fontSize: store.toolFontSize ?? 18,
       color: store.toolColor,
       strokeWidth: store.toolWidth,
       createdAt: Date.now(),
     };
+  }
+
+  cancel(): void {
+    this.isPlacing = false;
   }
 }

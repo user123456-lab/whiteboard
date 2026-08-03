@@ -1,5 +1,6 @@
 import json
 import time
+import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from room_manager import RoomManager
@@ -22,6 +23,28 @@ async def root():
     return {"status": "ok", "rooms": len(room_manager.rooms)}
 
 
+async def heartbeat_loop():
+    while True:
+        await asyncio.sleep(30)
+        for room in list(room_manager.rooms.values()):
+            for uid, ws in list(room.connections.items()):
+                try:
+                    await ws.send_json({"type": "ping", "userId": "server", "timestamp": int(time.time() * 1000), "payload": {}})
+                except Exception:
+                    room.remove_user(uid)
+
+
+@app.on_event("startup")
+async def startup():
+    asyncio.create_task(heartbeat_loop())
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    room_manager.save_all_rooms()
+    print("[Persistence] All rooms saved on shutdown")
+
+
 @app.websocket("/ws/{room_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
@@ -29,10 +52,15 @@ async def websocket_endpoint(
     userId: str = Query(...),
     userName: str = Query("Anonymous"),
 ):
-    await websocket.accept()
+    try:
+        room = room_manager.get_or_create_room(room_id)
+    except ValueError:
+        await websocket.close(code=4000, reason="Invalid room ID")
+        return
 
-    room = room_manager.get_or_create_room(room_id)
     user_info = room.add_user(userId, userName, websocket)
+
+    await websocket.accept()
 
     await websocket.send_json({
         "type": "room_state",
@@ -60,29 +88,28 @@ async def websocket_endpoint(
                 continue
 
             msg_type = message.get("type")
-            msg_user_id = message.get("userId", userId)
             payload = message.get("payload", {})
 
             if msg_type == "shape_created":
                 shape = payload.get("shape", {})
                 room.add_shape(shape)
-                await room.broadcast(message, exclude_user_id=msg_user_id)
+                await room.broadcast(message, exclude_user_id=userId)
 
             elif msg_type == "shape_updated":
                 shape_id = payload.get("shapeId")
                 changes = payload.get("changes", {})
                 if shape_id:
                     room.update_shape(shape_id, changes)
-                    await room.broadcast(message, exclude_user_id=msg_user_id)
+                    await room.broadcast(message, exclude_user_id=userId)
 
             elif msg_type == "shape_deleted":
                 shape_id = payload.get("shapeId")
                 if shape_id:
                     room.delete_shape(shape_id)
-                    await room.broadcast(message, exclude_user_id=msg_user_id)
+                    await room.broadcast(message, exclude_user_id=userId)
 
             elif msg_type == "cursor_move":
-                await room.broadcast(message, exclude_user_id=msg_user_id)
+                await room.broadcast(message, exclude_user_id=userId)
 
             elif msg_type == "ping":
                 await websocket.send_json({
