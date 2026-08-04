@@ -4,6 +4,7 @@ import { WhiteboardCanvas } from './components/WhiteboardCanvas';
 import { Toolbar } from './components/Toolbar';
 import { RoomPanel } from './components/RoomPanel';
 import { HistoryPanel } from './components/HistoryPanel';
+import { PropertiesPanel } from './components/PropertiesPanel';
 
 function App() {
   const userId = useCanvasStore((s) => s.userId);
@@ -11,6 +12,7 @@ function App() {
   const setUserName = useCanvasStore((s) => s.setUserName);
   const roomId = useCanvasStore((s) => s.roomId);
   const showHistory = useCanvasStore((s) => s.showHistory);
+  const selectedId = useCanvasStore((s) => s.selectedId);
 
   useEffect(() => {
     const storedId = localStorage.getItem('wb-userid');
@@ -31,6 +33,7 @@ function App() {
       {roomId && <Toolbar />}
       <RoomPanel />
       {roomId && showHistory && <HistoryPanel />}
+      {roomId && selectedId && <PropertiesPanel />}
       <WhiteboardCanvas />
     </div>
   );
