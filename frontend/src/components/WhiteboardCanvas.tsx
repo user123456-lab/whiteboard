@@ -168,7 +168,7 @@ export function WhiteboardCanvas() {
       transformerRef.current.nodes([]);
       transformerRef.current.getLayer()?.batchDraw();
     }
-  }, [selectedIds, shapes]);
+  }, [selectedIds]);
 
   // Drag-and-drop image files onto the canvas
   useEffect(() => {

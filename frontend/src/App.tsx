@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
 import { useCanvasStore } from './store/useCanvasStore';
+import { useUserPrefs } from './store/useUserPrefs';
 import { WhiteboardCanvas } from './components/WhiteboardCanvas';
 import { Toolbar } from './components/Toolbar';
 import { RoomPanel } from './components/RoomPanel';
 import { HistoryPanel } from './components/HistoryPanel';
 import { PropertiesPanel } from './components/PropertiesPanel';
+import { SettingsPanel } from './components/SettingsPanel';
 
 function App() {
   const userId = useCanvasStore((s) => s.userId);
@@ -13,6 +15,8 @@ function App() {
   const roomId = useCanvasStore((s) => s.roomId);
   const showHistory = useCanvasStore((s) => s.showHistory);
   const hasSelection = useCanvasStore((s) => s.selectedIds.length > 0);
+  const canvasBg = useUserPrefs((s) => s.canvasBg);
+  const showSettings = useUserPrefs((s) => s.showSettings);
 
   useEffect(() => {
     const storedId = localStorage.getItem('wb-userid');
@@ -29,11 +33,12 @@ function App() {
   }, [setUserId, setUserName]);
 
   return (
-    <div className="w-screen h-screen overflow-hidden bg-[#0A0A0B]">
+    <div className="w-screen h-screen overflow-hidden" style={{ background: canvasBg }}>
       {roomId && <Toolbar />}
       <RoomPanel />
       {roomId && showHistory && <HistoryPanel />}
       {roomId && hasSelection && <PropertiesPanel />}
+      {showSettings && <SettingsPanel />}
       <WhiteboardCanvas />
     </div>
   );

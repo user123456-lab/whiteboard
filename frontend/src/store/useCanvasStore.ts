@@ -216,7 +216,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       return { remoteCursors: cursors };
     }),
 
-  loadShapes: (shapes) => set({ shapes }),
+  loadShapes: (shapes) =>
+    set((state) => {
+      const validIds = new Set(shapes.map((s) => s.id));
+      const selectedIds = state.selectedIds.filter((id) => validIds.has(id));
+      return { shapes, selectedIds };
+    }),
 
   // ── Viewport ──
   setStageScale: (scale) => {

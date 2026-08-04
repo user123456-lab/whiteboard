@@ -22,8 +22,10 @@ import {
   AlignVerticalJustifyStart,
   AlignVerticalJustifyCenter,
   AlignVerticalJustifyEnd,
+  Settings,
 } from 'lucide-react';
 import { useCanvasStore } from '../store/useCanvasStore';
+import { useUserPrefs } from '../store/useUserPrefs';
 import type { ToolType } from '../types';
 import { useMemo } from 'react';
 import * as alignService from '../services/alignService';
@@ -345,6 +347,16 @@ export function Toolbar() {
           <div className="toolbar-sep" />
         </>
       )}
+
+      {/* ─── Settings ─── */}
+      <button
+        onClick={() => useUserPrefs.getState().setShowSettings(true)}
+        title="Settings"
+        className="tool-btn"
+        aria-label="Open settings"
+      >
+        <Settings />
+      </button>
 
       {/* ─── Export ─── */}
       <button
