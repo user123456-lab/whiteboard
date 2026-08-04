@@ -2,7 +2,6 @@ import { useRef, useEffect, useMemo, useCallback } from 'react';
 import type Konva from 'konva';
 import type { TextShape } from '../types';
 import { useCanvasStore } from '../store/useCanvasStore';
-import { sendMessage, getWs } from '../services/websocket';
 
 interface TextEditorProps {
   shape: TextShape;
@@ -37,19 +36,7 @@ export function TextEditor({ shape, stage }: TextEditorProps) {
       const store = useCanvasStore.getState();
       const text = e.target.value.trim();
       if (text) {
-        const existingShape = store.shapes.find((s) => s.id === shape.id);
-        const changes: Record<string, unknown> = { text, fontSize: shape.fontSize ?? 18 };
-        store.updateShape(shape.id, changes);
-        sendMessage(
-          getWs(),
-          'shape_updated',
-          {
-            shapeId: shape.id,
-            changes,
-            expectedVersion: existingShape?.version ?? 1,
-          },
-          store.userId,
-        );
+        store.updateShape(shape.id, { text, fontSize: shape.fontSize ?? 18 });
       }
       store.setEditingTextId(null);
     },

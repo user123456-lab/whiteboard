@@ -7,7 +7,6 @@ import { CursorOverlay } from './CursorOverlay';
 import { TextEditor } from './TextEditor';
 import { GridBackground } from './GridBackground';
 import type { Shape, ImageShape } from '../types';
-import { sendMessage, getWs } from '../services/websocket';
 
 const toolManager = new ToolManager();
 
@@ -212,7 +211,6 @@ export function WhiteboardCanvas() {
             version: 1,
           };
           store.addShape(newShape);
-          sendMessage(getWs(), 'shape_created', { shape: newShape }, store.userId);
         };
         img.src = reader.result as string;
       };
@@ -266,7 +264,6 @@ export function WhiteboardCanvas() {
                 version: 1,
               };
               store.addShape(newShape);
-              sendMessage(getWs(), 'shape_created', { shape: newShape }, store.userId);
             };
             img.src = reader.result as string;
           };

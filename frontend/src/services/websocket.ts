@@ -1,5 +1,6 @@
 import type { WSMessage } from '../types';
 import { useCanvasStore } from '../store/useCanvasStore';
+import { setSyncTransport } from './yjsSync';
 
 let wsInstance: WebSocket | null = null;
 let throttleTimer = 0;
@@ -10,7 +11,6 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_BASE_DELAY = 1000;
 
 export function connect(roomId: string, userId: string, userName: string): WebSocket {
-  // Close existing connection cleanly
   if (wsInstance) {
     intentionalClose = true;
     wsInstance.close();
@@ -35,6 +35,11 @@ export function connect(roomId: string, userId: string, userName: string): WebSo
     useCanvasStore.getState().setWsConnected(true);
     useCanvasStore.getState().setWsReconnecting(false);
     reconnectAttempts = 0;
+
+    // Wire up Yjs sync transport (avoids circular import)
+    setSyncTransport((type, payload) => {
+      sendMessage(ws, type, payload, useCanvasStore.getState().userId);
+    });
   };
 
   ws.onmessage = (event) => {
@@ -55,7 +60,6 @@ export function connect(roomId: string, userId: string, userName: string): WebSo
       useCanvasStore.getState().setWsReconnecting(false);
       return;
     }
-    // Unexpected disconnect — start reconnect loop
     useCanvasStore.getState().setWsConnected(false);
     useCanvasStore.getState().setWsReconnecting(true);
     scheduleReconnect(roomId, userId, userName);
@@ -73,7 +77,6 @@ function scheduleReconnect(roomId: string, userId: string, userName: string): vo
     useCanvasStore.getState().setWsReconnecting(false);
     return;
   }
-  // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s (capped at 30s)
   const delay = Math.min(RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttempts), 30000);
   reconnectAttempts++;
   reconnectTimer = setTimeout(() => {
@@ -81,24 +84,24 @@ function scheduleReconnect(roomId: string, userId: string, userName: string): vo
   }, delay);
 }
 
-// handleMessage — keep EXACTLY the same as current (imports addRemoteShape, removeRemoteShape, etc.)
 function handleMessage(msg: WSMessage): void {
   const store = useCanvasStore.getState();
 
   switch (msg.type) {
     case 'shape_created':
-      store.addRemoteShape(msg.payload.shape as never);
+      // Route through Yjs for CRDT merge
+      store.remoteCreateShape(msg.payload.shape as never);
       break;
 
     case 'shape_updated': {
       const shapeId = msg.payload.shapeId as string;
       const changes = msg.payload.changes as Record<string, unknown>;
-      store.applyRemoteUpdate(shapeId, changes);
+      store.remoteUpdateShape(shapeId, changes);
       break;
     }
 
     case 'shape_deleted':
-      store.removeRemoteShape(msg.payload.shapeId as string);
+      store.remoteDeleteShape(msg.payload.shapeId as string);
       break;
 
     case 'cursor_move':
@@ -115,19 +118,15 @@ function handleMessage(msg: WSMessage): void {
 
     case 'room_state': {
       const payload = msg.payload as { shapes: never[]; users: never[] };
-      store.loadShapes(payload.shapes);
+      // Bootstrap Yjs document from server state
+      store.bootstrapYjs(payload.shapes);
       store.setUsers(payload.users);
       break;
     }
 
-    case 'shape_conflict': {
-      const serverShape = msg.payload.shape as never;
-      const shapeId = (serverShape as Record<string, unknown>).id as string;
-      if (shapeId) {
-        store.applyRemoteUpdate(shapeId, serverShape as Record<string, unknown>);
-      }
+    case 'shape_conflict':
+      // Yjs CRDT resolves conflicts — no action needed
       break;
-    }
 
     case 'pong':
       break;

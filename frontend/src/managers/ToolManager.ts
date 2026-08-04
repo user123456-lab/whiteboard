@@ -137,14 +137,6 @@ export class ToolManager {
       const pos = this.getRelativePos(e);
 
       if (store.activeTool === 'select') {
-        const shape = store.shapes.find((s) => s.id === store.selectedId);
-        if (shape && 'x' in shape && 'y' in shape) {
-          sendMessage(getWs(), 'shape_updated', {
-            shapeId: shape.id,
-            changes: { x: (shape as Shape & { x: number }).x, y: (shape as Shape & { y: number }).y },
-            expectedVersion: shape.version ?? 1,
-          }, store.userId);
-        }
         this.selectTool.onMouseUp(pos, store, this.previewLayer!);
         return;
       }
@@ -161,7 +153,6 @@ export class ToolManager {
 
       if (shape) {
         store.addShape(shape);
-        sendMessage(getWs(), 'shape_created', { shape }, store.userId);
         // Text tool: immediately enter edit mode after creating text
         if (shape.type === 'text') {
           store.setEditingTextId(shape.id);
@@ -215,7 +206,6 @@ export class ToolManager {
           }
 
           store.addShape(newShape);
-          sendMessage(getWs(), 'shape_created', { shape: newShape }, store.userId);
           store.setSelectedId(newShape.id);
         }
         return;
@@ -223,18 +213,12 @@ export class ToolManager {
 
       if (e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
-        const shapeId = store.undoOwn(store.userId);
-        if (shapeId) {
-          sendMessage(getWs(), 'shape_deleted', { shapeId }, store.userId);
-        }
+        store.undo();
         return;
       }
       if ((e.key === 'z' && e.shiftKey) || e.key === 'y' || e.key === 'Y') {
         e.preventDefault();
-        const shape = store.redoOwn(store.userId);
-        if (shape) {
-          sendMessage(getWs(), 'shape_created', { shape }, store.userId);
-        }
+        store.redo();
         return;
       }
 
@@ -259,7 +243,6 @@ export class ToolManager {
           const shape = store.shapes.find((s) => s.id === store.selectedId);
           if (shape && (shape.userId === store.userId || (!shape.userId && !shape.locked))) {
             store.deleteShape(shape.id);
-            sendMessage(getWs(), 'shape_deleted', { shapeId: shape.id }, store.userId);
           }
         }
         break;
@@ -274,12 +257,7 @@ export class ToolManager {
         if (store.selectedId) {
           const shape = store.shapes.find((s) => s.id === store.selectedId);
           if (shape && shape.userId === store.userId) {
-            const newLocked = store.toggleLock(shape.id);
-            sendMessage(getWs(), 'shape_updated', {
-              shapeId: shape.id,
-              changes: { locked: newLocked },
-              expectedVersion: shape.version ?? 1,
-            }, store.userId);
+            store.toggleLock(shape.id);
           }
         }
         break;
@@ -329,7 +307,6 @@ export class ToolManager {
 
     this.erasedInStroke.add(shapeId);
     store.deleteShape(shapeId);
-    sendMessage(getWs(), 'shape_deleted', { shapeId }, store.userId);
   }
 
   private lastSweepTime = 0;
@@ -350,37 +327,16 @@ export class ToolManager {
       return;
     }
 
-    // Snapshot pre-update versions for WebSocket expectedVersion
-    const preUpdateVersions = new Map<string, number>();
-    for (const upd of result.shapesToUpdate) {
-      const s = store.shapes.find((shape) => shape.id === upd.shapeId);
-      if (s) preUpdateVersions.set(upd.shapeId, s.version ?? 1);
-    }
-
-    // Batch all store mutations into a single Zustand set() to avoid cascading re-renders
+    // Batch all store mutations — Yjs auto-syncs the entire batch
     store.batchApplySweepResult({
       shapesToUpdate: result.shapesToUpdate,
       shapesToCreate: result.shapesToCreate,
       shapesToDelete: result.shapesToDelete,
     });
 
-    // Send individual WebSocket messages — use pre-update versions
-    for (const upd of result.shapesToUpdate) {
-      sendMessage(getWs(), 'shape_updated', {
-        shapeId: upd.shapeId,
-        changes: { points: upd.points },
-        expectedVersion: preUpdateVersions.get(upd.shapeId) ?? 1,
-      }, store.userId);
-    }
-
-    for (const newShape of result.shapesToCreate) {
-      sendMessage(getWs(), 'shape_created', { shape: newShape }, store.userId);
-    }
-
+    // Track deleted shapes in stroke
     for (const shapeId of result.shapesToDelete) {
-      if (this.erasedInStroke.has(shapeId)) continue;
       this.erasedInStroke.add(shapeId);
-      sendMessage(getWs(), 'shape_deleted', { shapeId }, store.userId);
     }
   }
 

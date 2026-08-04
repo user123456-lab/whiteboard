@@ -12,7 +12,6 @@ import {
   X,
 } from 'lucide-react';
 import { useCanvasStore } from '../store/useCanvasStore';
-import { sendMessage, getWs } from '../services/websocket';
 import type { Shape, ShapeType } from '../types';
 
 const TYPE_ICONS: Record<ShapeType, React.ComponentType<{ className?: string }>> = {
@@ -35,42 +34,17 @@ const TYPE_NAMES: Record<ShapeType, string> = {
 
 function updateProperty(shapeId: string, changes: Record<string, unknown>) {
   const store = useCanvasStore.getState();
-  const shape = store.shapes.find((s) => s.id === shapeId);
-  if (!shape) return;
   store.updateShape(shapeId, changes);
-  sendMessage(
-    getWs(),
-    'shape_updated',
-    {
-      shapeId,
-      changes,
-      expectedVersion: shape.version ?? 1,
-    },
-    store.userId,
-  );
 }
 
-/** Special helper: preserves lock semantics (only owner can toggle) */
 function toggleLockProperty(shape: Shape) {
   const store = useCanvasStore.getState();
   if (shape.userId !== store.userId) return;
-  const newLocked = store.toggleLock(shape.id);
-  sendMessage(
-    getWs(),
-    'shape_updated',
-    {
-      shapeId: shape.id,
-      changes: { locked: newLocked },
-      expectedVersion: shape.version ?? 1,
-    },
-    store.userId,
-  );
+  store.toggleLock(shape.id);
 }
 
 function deleteShape(shapeId: string) {
-  const store = useCanvasStore.getState();
-  store.deleteShape(shapeId);
-  sendMessage(getWs(), 'shape_deleted', { shapeId }, store.userId);
+  useCanvasStore.getState().deleteShape(shapeId);
 }
 
 /* ── Inline mini-components ── */

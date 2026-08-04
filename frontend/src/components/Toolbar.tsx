@@ -18,7 +18,6 @@ import {
   Plus,
 } from 'lucide-react';
 import { useCanvasStore } from '../store/useCanvasStore';
-import { sendMessage, getWs } from '../services/websocket';
 import type { ToolType } from '../types';
 import { useMemo } from 'react';
 
@@ -86,19 +85,11 @@ export function Toolbar() {
   }, [gridMode]);
 
   const handleUndo = () => {
-    const store = useCanvasStore.getState();
-    const shapeId = store.undoOwn(userId);
-    if (shapeId) {
-      sendMessage(getWs(), 'shape_deleted', { shapeId }, userId);
-    }
+    useCanvasStore.getState().undo();
   };
 
   const handleRedo = () => {
-    const store = useCanvasStore.getState();
-    const shape = store.redoOwn(userId);
-    if (shape) {
-      sendMessage(getWs(), 'shape_created', { shape }, userId);
-    }
+    useCanvasStore.getState().redo();
   };
 
   const zoomToCenter = (direction: 'in' | 'out') => {
