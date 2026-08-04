@@ -57,15 +57,12 @@ export class ToolManager {
           if (shape) {
             if (shape.locked && shape.userId !== store.userId) return; // locked
             if (shiftKey) {
-              // Shift+click → toggle in multi-select
               store.toggleSelect(shapeId);
             } else if (shape.groupId && !store.selectedIds.includes(shapeId)) {
-              // Click grouped shape → select entire group
               store.selectGroup(shape.groupId);
             } else {
               store.selectOnly(shapeId);
             }
-            // Update dragged shapes for multi-drag
             const selIds = useCanvasStore.getState().selectedIds;
             this.selectTool.setDraggedShapes(
               store.shapes.filter((s) => selIds.includes(s.id) && !(s.locked && s.userId !== store.userId))
