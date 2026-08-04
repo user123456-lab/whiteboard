@@ -16,10 +16,17 @@ import {
   Download,
   Minus,
   Plus,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignVerticalJustifyStart,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
 } from 'lucide-react';
 import { useCanvasStore } from '../store/useCanvasStore';
 import type { ToolType } from '../types';
 import { useMemo } from 'react';
+import * as alignService from '../services/alignService';
 
 interface ToolDef {
   type: ToolType;
@@ -72,6 +79,18 @@ export function Toolbar() {
   const gridMode = useCanvasStore((s) => s.gridMode);
   const setGridMode = useCanvasStore((s) => s.setGridMode);
   const showHistory = useCanvasStore((s) => s.showHistory);
+  const selectedIds = useCanvasStore((s) => s.selectedIds);
+  const shapes = useCanvasStore((s) => s.shapes);
+
+  const showAlign = useMemo(() => {
+    if (selectedIds.length < 2) return false;
+    let positioned = 0;
+    for (const id of selectedIds) {
+      const s = shapes.find((sh) => sh.id === id);
+      if (s && 'x' in s && 'y' in s) positioned++;
+    }
+    return positioned >= 2;
+  }, [selectedIds, shapes]);
 
   const showFill = activeTool === 'rectangle' || activeTool === 'circle' || activeTool === 'arrow';
   const showProps = activeTool !== 'eraser' && activeTool !== 'text' && activeTool !== 'select';
@@ -297,6 +316,35 @@ export function Toolbar() {
       </button>
 
       <div className="toolbar-sep" />
+
+      {/* ─── Align (multi-select only) ─── */}
+      {showAlign && (
+        <>
+          <div className="flex items-center gap-0.5">
+            <button onClick={alignService.alignLeft} title="Align Left" className="tool-btn" aria-label="Align left">
+              <AlignLeft />
+            </button>
+            <button onClick={alignService.alignCenterH} title="Align Center (H)" className="tool-btn" aria-label="Align center horizontal">
+              <AlignCenter />
+            </button>
+            <button onClick={alignService.alignRight} title="Align Right" className="tool-btn" aria-label="Align right">
+              <AlignRight />
+            </button>
+          </div>
+          <div className="flex items-center gap-0.5">
+            <button onClick={alignService.alignTop} title="Align Top" className="tool-btn" aria-label="Align top">
+              <AlignVerticalJustifyStart />
+            </button>
+            <button onClick={alignService.alignCenterV} title="Align Center (V)" className="tool-btn" aria-label="Align center vertical">
+              <AlignVerticalJustifyCenter />
+            </button>
+            <button onClick={alignService.alignBottom} title="Align Bottom" className="tool-btn" aria-label="Align bottom">
+              <AlignVerticalJustifyEnd />
+            </button>
+          </div>
+          <div className="toolbar-sep" />
+        </>
+      )}
 
       {/* ─── Export ─── */}
       <button
