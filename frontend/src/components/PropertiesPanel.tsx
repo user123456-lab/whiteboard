@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Pencil,
   Square,
@@ -108,11 +108,13 @@ function NumberInput({
 }) {
   const [local, setLocal] = useState(String(Math.round(value)));
 
-  // Sync from external shape changes
-  const extRounded = String(Math.round(value));
-  if (String(Math.round(Number(local))) !== extRounded && document.activeElement?.tagName !== 'INPUT') {
-    // Only sync when not focused, so typing isn't interrupted
-  }
+  // Sync from external shape changes (remote update, align, etc.)
+  useEffect(() => {
+    const extRounded = String(Math.round(value));
+    if (String(Math.round(Number(local))) !== extRounded && document.activeElement?.tagName !== 'INPUT') {
+      setLocal(extRounded);
+    }
+  }, [value]);
 
   return (
     <div className="flex items-center gap-1">

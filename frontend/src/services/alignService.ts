@@ -11,8 +11,12 @@ interface PosEntry {
 }
 
 function getBounds(s: PosEntry) {
-  const r = s.radius ?? 0;
-  return { left: s.x, top: s.y, right: s.x + (s.width ?? r * 2), bottom: s.y + (s.height ?? r * 2) };
+  if (s.radius !== undefined) {
+    // Circle: x,y is center
+    return { left: s.x - s.radius, top: s.y - s.radius, right: s.x + s.radius, bottom: s.y + s.radius };
+  }
+  // Rectangle/Image/Text: x,y is top-left
+  return { left: s.x, top: s.y, right: s.x + (s.width ?? 0), bottom: s.y + (s.height ?? 0) };
 }
 
 function getCenter(s: PosEntry) {

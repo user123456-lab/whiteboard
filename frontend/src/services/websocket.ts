@@ -119,7 +119,7 @@ function handleMessage(msg: WSMessage): void {
     case 'room_state': {
       const payload = msg.payload as { shapes: never[]; users: never[] };
       // Bootstrap Yjs document from server state
-      store.bootstrapYjs(payload.shapes);
+      store.bootstrapYjs(payload.shapes, true);
       store.setUsers(payload.users);
       break;
     }

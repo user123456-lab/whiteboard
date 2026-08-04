@@ -81,17 +81,20 @@ class WhiteboardSync {
 
   // ── Bootstrap ──
 
-  bootstrap(shapes: Shape[]): void {
-    if (this.bootstrapped) return;
+  bootstrap(shapes: Shape[], force = false): void {
+    if (this.bootstrapped && !force) return;
     this.bootstrapped = true;
     this.suppressBroadcast = true;
-    this.doc.transact(() => {
-      this.shapes.delete(0, this.shapes.length);
-      for (const shape of shapes) {
-        this.shapes.push([shapeToMap(shape)]);
-      }
-    });
-    this.suppressBroadcast = false;
+    try {
+      this.doc.transact(() => {
+        this.shapes.delete(0, this.shapes.length);
+        for (const shape of shapes) {
+          this.shapes.push([shapeToMap(shape)]);
+        }
+      });
+    } finally {
+      this.suppressBroadcast = false;
+    }
     this.undoManager.clear();
   }
 
@@ -203,42 +206,51 @@ class WhiteboardSync {
   applyRemoteCreate(shape: Shape): void {
     if (this.findIndex(shape.id) !== -1) return;
     this.suppressBroadcast = true;
-    this.doc.transact(() => {
-      this.shapes.push([shapeToMap(shape)]);
-    });
-    this.suppressBroadcast = false;
+    try {
+      this.doc.transact(() => {
+        this.shapes.push([shapeToMap(shape)]);
+      });
+    } finally {
+      this.suppressBroadcast = false;
+    }
   }
 
   applyRemoteUpdate(shapeId: string, changes: Partial<Shape>): void {
     this.suppressBroadcast = true;
-    const idx = this.findIndex(shapeId);
-    if (idx !== -1) {
-      const map = this.shapes.get(idx);
-      this.doc.transact(() => {
-        for (const [k, v] of Object.entries(changes)) {
-          if (v === undefined) continue;
-          if (k === 'points' && Array.isArray(v)) {
-            const arr = getPointsArray(map);
-            arr.delete(0, arr.length);
-            arr.insert(0, v);
-          } else {
-            map.set(k, v);
+    try {
+      const idx = this.findIndex(shapeId);
+      if (idx !== -1) {
+        const map = this.shapes.get(idx);
+        this.doc.transact(() => {
+          for (const [k, v] of Object.entries(changes)) {
+            if (v === undefined) continue;
+            if (k === 'points' && Array.isArray(v)) {
+              const arr = getPointsArray(map);
+              arr.delete(0, arr.length);
+              arr.insert(0, v);
+            } else {
+              map.set(k, v);
+            }
           }
-        }
-      });
+        });
+      }
+    } finally {
+      this.suppressBroadcast = false;
     }
-    this.suppressBroadcast = false;
   }
 
   applyRemoteDelete(shapeId: string): void {
     this.suppressBroadcast = true;
-    const idx = this.findIndex(shapeId);
-    if (idx !== -1) {
-      this.doc.transact(() => {
-        this.shapes.delete(idx, 1);
-      });
+    try {
+      const idx = this.findIndex(shapeId);
+      if (idx !== -1) {
+        this.doc.transact(() => {
+          this.shapes.delete(idx, 1);
+        });
+      }
+    } finally {
+      this.suppressBroadcast = false;
     }
-    this.suppressBroadcast = false;
   }
 
   // ── Undo / Redo ──
@@ -326,10 +338,13 @@ class WhiteboardSync {
     const changes: Record<string, unknown> = {};
     const oldRec = old as unknown as Record<string, unknown>;
     const nextRec = next as unknown as Record<string, unknown>;
-    for (const k of Object.keys(nextRec)) {
+    const allKeys = new Set([...Object.keys(oldRec), ...Object.keys(nextRec)]);
+    for (const k of allKeys) {
       const a = oldRec[k];
       const b = nextRec[k];
-      if (k === 'points' && Array.isArray(a) && Array.isArray(b)) {
+      if (b === undefined && a !== undefined) {
+        changes[k] = null; // key was removed
+      } else if (k === 'points' && Array.isArray(a) && Array.isArray(b)) {
         if (a.length !== b.length || a.some((v: number, i: number) => v !== (b as number[])[i])) {
           changes[k] = b;
         }

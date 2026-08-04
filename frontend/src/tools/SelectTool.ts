@@ -6,6 +6,7 @@ interface DragEntry {
   shape: Shape;
   startX: number;
   startY: number;
+  startPoints?: number[];
 }
 
 export class SelectTool {
@@ -18,12 +19,14 @@ export class SelectTool {
     this.isDragging = true;
     this.dragStartX = pos.x;
     this.dragStartY = pos.y;
-    // Capture start positions for all dragged shapes
     for (const entry of this.draggedShapes) {
       const s = entry.shape;
       if ('x' in s && 'y' in s) {
         entry.startX = (s as Shape & { x: number }).x;
         entry.startY = (s as Shape & { y: number }).y;
+      }
+      if ('points' in s && Array.isArray(s.points)) {
+        entry.startPoints = [...(s as Shape & { points: number[] }).points];
       }
     }
   }
@@ -35,7 +38,6 @@ export class SelectTool {
     const dy = pos.y - this.dragStartY;
 
     for (const entry of this.draggedShapes) {
-      // Re-check lock
       const latest = store.shapes.find(s => s.id === entry.shape.id);
       if (!latest || (latest.locked && latest.userId !== store.userId)) continue;
 
@@ -44,6 +46,10 @@ export class SelectTool {
           x: entry.startX + dx,
           y: entry.startY + dy,
         });
+      }
+      if ('points' in latest && Array.isArray(latest.points) && entry.startPoints) {
+        const offsetPoints = entry.startPoints.map((p, i) => p + (i % 2 === 0 ? dx : dy));
+        store.updateShape(latest.id, { points: offsetPoints });
       }
     }
   }

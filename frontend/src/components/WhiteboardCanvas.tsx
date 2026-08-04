@@ -593,6 +593,20 @@ export function WhiteboardCanvas() {
                   y: node.y(),
                   fontSize: Math.max(8, Math.round((shape.fontSize ?? 18) * Math.abs(scaleY))),
                 });
+              } else if ((shape.type === 'brush' || shape.type === 'arrow') && 'points' in shape) {
+                // Scale all points relative to bounding box origin
+                const pts = [...(shape as Shape & { points: number[] }).points];
+                let minX = Infinity, minY = Infinity;
+                for (let i = 0; i < pts.length; i += 2) {
+                  minX = Math.min(minX, pts[i]);
+                  minY = Math.min(minY, pts[i + 1]);
+                }
+                const scaledPts = pts.map((p, i) =>
+                  (i % 2 === 0)
+                    ? minX + (p - minX) * Math.abs(scaleX)
+                    : minY + (p - minY) * Math.abs(scaleY)
+                );
+                store.updateShape(shapeId, { points: scaledPts } as Partial<Shape>);
               }
 
               // Reset scale so next transform starts from 1

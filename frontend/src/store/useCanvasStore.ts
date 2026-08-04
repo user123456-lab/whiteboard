@@ -60,7 +60,7 @@ export interface CanvasState {
   remoteDeleteShape: (id: string) => void;
 
   // Bootstrap
-  bootstrapYjs: (shapes: Shape[]) => void;
+  bootstrapYjs: (shapes: Shape[], force?: boolean) => void;
 
   setSelectedId: (id: string | null) => void;
   selectOnly: (id: string) => void;
@@ -159,7 +159,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   remoteDeleteShape: (id) => whiteboardSync.applyRemoteDelete(id),
 
   // ── Bootstrap ──
-  bootstrapYjs: (shapes) => whiteboardSync.bootstrap(shapes),
+  bootstrapYjs: (shapes, force) => whiteboardSync.bootstrap(shapes, force),
 
   // ── Local state ──
   setSelectedId: (id) => set({ selectedIds: id ? [id] : [] }),
