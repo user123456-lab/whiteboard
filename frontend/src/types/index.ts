@@ -12,6 +12,7 @@ export interface BaseShape {
   version?: number;
   locked?: boolean;
   fill?: string;
+  groupId?: string;
 }
 
 export interface BrushShape extends BaseShape {

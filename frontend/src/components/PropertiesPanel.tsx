@@ -150,13 +150,13 @@ function NumberInput({
 /* ── Main component ── */
 
 export function PropertiesPanel() {
-  const selectedId = useCanvasStore((s) => s.selectedId);
+  const selectedIds = useCanvasStore((s) => s.selectedIds);
   const shapes = useCanvasStore((s) => s.shapes);
   const userId = useCanvasStore((s) => s.userId);
 
-  const shape = useMemo(() => shapes.find((s) => s.id === selectedId), [shapes, selectedId]);
+  const shape = useMemo(() => shapes.find((s) => s.id === selectedIds[0]), [shapes, selectedIds]);
 
-  if (!shape) return null;
+  if (selectedIds.length === 0 || !shape) return null;
 
   const isOwner = shape.userId === userId;
   const TypeIcon = TYPE_ICONS[shape.type];

@@ -70,7 +70,7 @@ export function WhiteboardCanvas() {
   const transformerRef = useRef<Konva.Transformer>(null);
 
   const shapes = useCanvasStore((s) => s.shapes);
-  const selectedId = useCanvasStore((s) => s.selectedId);
+  const selectedIds = useCanvasStore((s) => s.selectedIds);
   const activeTool = useCanvasStore((s) => s.activeTool);
   const eraserRadius = useCanvasStore((s) => s.eraserRadius);
   const stageScale = useCanvasStore((s) => s.stageScale);
@@ -156,19 +156,19 @@ export function WhiteboardCanvas() {
   }, []);
 
   useEffect(() => {
-    if (transformerRef.current && selectedId) {
+    if (transformerRef.current && selectedIds.length > 0) {
       const stage = stageRef.current;
       if (!stage) return;
-      const node = stage.findOne('#' + selectedId);
-      if (node) {
-        transformerRef.current.nodes([node]);
-        transformerRef.current.getLayer()?.batchDraw();
-      }
+      const nodes = selectedIds
+        .map((id) => stage.findOne('#' + id))
+        .filter(Boolean) as Konva.Shape[];
+      transformerRef.current.nodes(nodes);
+      transformerRef.current.getLayer()?.batchDraw();
     } else if (transformerRef.current) {
       transformerRef.current.nodes([]);
       transformerRef.current.getLayer()?.batchDraw();
     }
-  }, [selectedId, shapes]);
+  }, [selectedIds, shapes]);
 
   // Drag-and-drop image files onto the canvas
   useEffect(() => {

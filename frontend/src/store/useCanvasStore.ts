@@ -4,7 +4,7 @@ import { whiteboardSync } from '../services/yjsSync';
 
 export interface CanvasState {
   shapes: Shape[];
-  selectedId: string | null;
+  selectedIds: string[];
   activeTool: ToolType;
   toolColor: string;
   toolWidth: number;
@@ -63,6 +63,10 @@ export interface CanvasState {
   bootstrapYjs: (shapes: Shape[]) => void;
 
   setSelectedId: (id: string | null) => void;
+  selectOnly: (id: string) => void;
+  toggleSelect: (id: string) => void;
+  clearSelection: () => void;
+  selectGroup: (groupId: string) => void;
   setActiveTool: (tool: ToolType) => void;
   setToolColor: (color: string) => void;
   setToolWidth: (width: number) => void;
@@ -85,7 +89,7 @@ export interface CanvasState {
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
   shapes: [],
-  selectedId: null,
+  selectedIds: [],
   activeTool: 'select',
   toolColor: '#3B82F6',
   toolWidth: 2,
@@ -158,8 +162,26 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   bootstrapYjs: (shapes) => whiteboardSync.bootstrap(shapes),
 
   // ── Local state ──
-  setSelectedId: (id) => set({ selectedId: id }),
-  setActiveTool: (tool) => set({ activeTool: tool, selectedId: null }),
+  setSelectedId: (id) => set({ selectedIds: id ? [id] : [] }),
+  selectOnly: (id) => set({ selectedIds: [id] }),
+  toggleSelect: (id) =>
+    set((state) => {
+      const exists = state.selectedIds.includes(id);
+      return {
+        selectedIds: exists
+          ? state.selectedIds.filter((i) => i !== id)
+          : [...state.selectedIds, id],
+      };
+    }),
+  clearSelection: () => set({ selectedIds: [] }),
+  selectGroup: (groupId) =>
+    set((state) => {
+      const groupIds = state.shapes
+        .filter((s) => s.groupId === groupId)
+        .map((s) => s.id);
+      return { selectedIds: groupIds };
+    }),
+  setActiveTool: (tool) => set({ activeTool: tool, selectedIds: [] }),
   setToolColor: (color) => set({ toolColor: color }),
   setToolWidth: (width) => set({ toolWidth: width }),
   setToolFontSize: (size) => set({ toolFontSize: Math.max(8, Math.min(72, size)) }),

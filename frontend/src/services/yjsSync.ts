@@ -254,6 +254,34 @@ class WhiteboardSync {
     this.undoManager.redo();
   }
 
+  // ── Group / Ungroup ──
+
+  groupShapes(ids: string[]): void {
+    if (ids.length < 2) return;
+    const groupId = crypto.randomUUID();
+    this.doc.transact(() => {
+      for (const id of ids) {
+        const idx = this.findIndex(id);
+        if (idx !== -1) {
+          this.shapes.get(idx).set('groupId', groupId);
+        }
+      }
+    });
+    // Select the group after creating it
+    useCanvasStore.getState().selectGroup(groupId);
+  }
+
+  ungroupShapes(ids: string[]): void {
+    this.doc.transact(() => {
+      for (const id of ids) {
+        const idx = this.findIndex(id);
+        if (idx !== -1) {
+          this.shapes.get(idx).set('groupId', null);
+        }
+      }
+    });
+  }
+
   canUndo(): boolean { return this.undoManager.undoStack.length > 0; }
   canRedo(): boolean { return this.undoManager.redoStack.length > 0; }
 

@@ -2,6 +2,7 @@ import type Konva from 'konva';
 import type { Shape } from '../types';
 import { useCanvasStore, type CanvasState } from '../store/useCanvasStore';
 import { sendMessage, getWs } from '../services/websocket';
+import { whiteboardSync } from '../services/yjsSync';
 import { BrushTool } from '../tools/BrushTool';
 import { RectangleTool } from '../tools/RectangleTool';
 import { CircleTool } from '../tools/CircleTool';
@@ -48,23 +49,31 @@ export class ToolManager {
       const pos = this.getRelativePos(e);
 
       if (store.activeTool === 'select') {
-        // Hit test shapes
         const target = e.target;
+        const shiftKey = e.evt.shiftKey;
         if (target && target !== this.stage && target.attrs?.id) {
           const shapeId = target.attrs.id as string;
           const shape = store.shapes.find((s) => s.id === shapeId);
           if (shape) {
-            if (shape.locked && shape.userId !== store.userId) {
-              store.setSelectedId(null);
-              this.selectTool.setDraggedShape(null);
-              return; // locked by someone else — can't select
+            if (shape.locked && shape.userId !== store.userId) return; // locked
+            if (shiftKey) {
+              // Shift+click → toggle in multi-select
+              store.toggleSelect(shapeId);
+            } else if (shape.groupId && !store.selectedIds.includes(shapeId)) {
+              // Click grouped shape → select entire group
+              store.selectGroup(shape.groupId);
+            } else {
+              store.selectOnly(shapeId);
             }
-            store.setSelectedId(shapeId);
-            this.selectTool.setDraggedShape(shape);
+            // Update dragged shapes for multi-drag
+            const selIds = useCanvasStore.getState().selectedIds;
+            this.selectTool.setDraggedShapes(
+              store.shapes.filter((s) => selIds.includes(s.id) && !(s.locked && s.userId !== store.userId))
+            );
           }
-        } else {
-          store.setSelectedId(null);
-          this.selectTool.setDraggedShape(null);
+        } else if (!shiftKey) {
+          store.clearSelection();
+          this.selectTool.setDraggedShapes([]);
         }
         this.selectTool.onMouseDown(pos, store, this.previewLayer!);
         return;
@@ -93,13 +102,13 @@ export class ToolManager {
           if (shape && shape.type === 'text') return;
         }
         // Empty area → create new text, immediately enter edit mode on mouseup
-        store.setSelectedId(null);
+        store.clearSelection();
         this.isDrawing = true;
         this.textTool.onMouseDown(pos, store, this.previewLayer!);
         return;
       }
 
-      store.setSelectedId(null);
+      store.clearSelection();
       this.isDrawing = true;
       this.getActiveDrawingTool()?.onMouseDown(pos, store, this.previewLayer!);
     } catch (err) {
@@ -170,11 +179,10 @@ export class ToolManager {
     if (e.ctrlKey || e.metaKey) {
       // Ctrl+C — copy selected shape to clipboard
       if (e.key === 'c') {
-        if (store.selectedId) {
-          const shape = store.shapes.find((s) => s.id === store.selectedId);
-          if (shape) {
-            store.setClipboard(structuredClone(shape));
-          }
+        const selId = store.selectedIds[0];
+        if (selId) {
+          const shape = store.shapes.find((s) => s.id === selId);
+          if (shape) store.setClipboard(structuredClone(shape));
         }
         return;
       }
@@ -222,14 +230,33 @@ export class ToolManager {
         return;
       }
 
+      // Ctrl+G — group selected shapes
+      if (e.key === 'g') {
+        e.preventDefault();
+        if (store.selectedIds.length >= 2) {
+          whiteboardSync.groupShapes(store.selectedIds);
+        }
+        return;
+      }
+      // Ctrl+Shift+G — ungroup
+      if (e.key === 'G') {
+        e.preventDefault();
+        if (store.selectedIds.length > 0) {
+          whiteboardSync.ungroupShapes(store.selectedIds);
+          store.clearSelection();
+        }
+        return;
+      }
       // Ctrl+] — move shape to top
       if (e.key === ']') {
-        if (store.selectedId) store.moveShapeTop(store.selectedId);
+        const sel = store.selectedIds[0];
+        if (sel) store.moveShapeTop(sel);
         return;
       }
       // Ctrl+[ — move shape to bottom
       if (e.key === '[') {
-        if (store.selectedId) store.moveShapeBottom(store.selectedId);
+        const sel = store.selectedIds[0];
+        if (sel) store.moveShapeBottom(sel);
         return;
       }
 
@@ -239,10 +266,10 @@ export class ToolManager {
     switch (e.key.toLowerCase()) {
       case 'delete':
       case 'backspace':
-        if (store.selectedId) {
-          const shape = store.shapes.find((s) => s.id === store.selectedId);
+        for (const id of store.selectedIds) {
+          const shape = store.shapes.find((s) => s.id === id);
           if (shape && (shape.userId === store.userId || (!shape.userId && !shape.locked))) {
-            store.deleteShape(shape.id);
+            store.deleteShape(id);
           }
         }
         break;
@@ -254,27 +281,24 @@ export class ToolManager {
       case 't': this.cancelAll(); store.setActiveTool('text'); break;
       case 'e': this.cancelAll(); store.setActiveTool('eraser'); break;
       case 'l':
-        if (store.selectedId) {
-          const shape = store.shapes.find((s) => s.id === store.selectedId);
+        for (const id of store.selectedIds) {
+          const shape = store.shapes.find((s) => s.id === id);
           if (shape && shape.userId === store.userId) {
-            store.toggleLock(shape.id);
+            store.toggleLock(id);
           }
         }
         break;
       case 'escape':
-        store.setSelectedId(null);
+        store.clearSelection();
         this.cancelAll();
         break;
-      // Layer ordering (when shape is selected)
       case ']':
-        if (store.selectedId) {
-          store.moveShapeUp(store.selectedId);
-        }
+        const upId = store.selectedIds[0];
+        if (upId) store.moveShapeUp(upId);
         break;
       case '[':
-        if (store.selectedId) {
-          store.moveShapeDown(store.selectedId);
-        }
+        const downId = store.selectedIds[0];
+        if (downId) store.moveShapeDown(downId);
         break;
     }
   }

@@ -12,7 +12,7 @@ function App() {
   const setUserName = useCanvasStore((s) => s.setUserName);
   const roomId = useCanvasStore((s) => s.roomId);
   const showHistory = useCanvasStore((s) => s.showHistory);
-  const selectedId = useCanvasStore((s) => s.selectedId);
+  const hasSelection = useCanvasStore((s) => s.selectedIds.length > 0);
 
   useEffect(() => {
     const storedId = localStorage.getItem('wb-userid');
@@ -33,7 +33,7 @@ function App() {
       {roomId && <Toolbar />}
       <RoomPanel />
       {roomId && showHistory && <HistoryPanel />}
-      {roomId && selectedId && <PropertiesPanel />}
+      {roomId && hasSelection && <PropertiesPanel />}
       <WhiteboardCanvas />
     </div>
   );
