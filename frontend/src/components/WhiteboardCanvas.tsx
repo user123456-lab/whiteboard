@@ -560,6 +560,46 @@ export function WhiteboardCanvas() {
             if (newBox.width < 3 || newBox.height < 3) return oldBox;
             return newBox;
           }}
+          onTransformEnd={() => {
+            const stage = stageRef.current;
+            if (!stage || !transformerRef.current) return;
+            const nodes = transformerRef.current.nodes();
+            const store = useCanvasStore.getState();
+            for (const node of nodes) {
+              const shapeId = node.id();
+              const shape = store.shapes.find((s) => s.id === shapeId);
+              if (!shape || shape.locked && shape.userId !== store.userId) continue;
+
+              const scaleX = node.scaleX();
+              const scaleY = node.scaleY();
+
+              if (shape.type === 'rectangle' || shape.type === 'image') {
+                store.updateShape(shapeId, {
+                  x: node.x(),
+                  y: node.y(),
+                  width: Math.max(3, node.width() * scaleX),
+                  height: Math.max(3, node.height() * scaleY),
+                });
+              } else if (shape.type === 'circle') {
+                const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
+                store.updateShape(shapeId, {
+                  x: node.x(),
+                  y: node.y(),
+                  radius: Math.max(1, shape.radius * avgScale),
+                });
+              } else if (shape.type === 'text') {
+                store.updateShape(shapeId, {
+                  x: node.x(),
+                  y: node.y(),
+                  fontSize: Math.max(8, Math.round((shape.fontSize ?? 18) * Math.abs(scaleY))),
+                });
+              }
+
+              // Reset scale so next transform starts from 1
+              node.scaleX(1);
+              node.scaleY(1);
+            }
+          }}
         />
       </Layer>
     </Stage>
