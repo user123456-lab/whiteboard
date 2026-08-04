@@ -93,7 +93,7 @@ function handleMessage(msg: WSMessage): void {
     case 'shape_updated': {
       const shapeId = msg.payload.shapeId as string;
       const changes = msg.payload.changes as Record<string, unknown>;
-      store.updateShape(shapeId, changes);
+      store.applyRemoteUpdate(shapeId, changes);
       break;
     }
 
@@ -117,6 +117,15 @@ function handleMessage(msg: WSMessage): void {
       const payload = msg.payload as { shapes: never[]; users: never[] };
       store.loadShapes(payload.shapes);
       store.setUsers(payload.users);
+      break;
+    }
+
+    case 'shape_conflict': {
+      const serverShape = msg.payload.shape as never;
+      const shapeId = (serverShape as Record<string, unknown>).id as string;
+      if (shapeId) {
+        store.applyRemoteUpdate(shapeId, serverShape as Record<string, unknown>);
+      }
       break;
     }
 

@@ -59,11 +59,23 @@ class Room:
                 return
         self.shapes.append(shape)
 
-    def update_shape(self, shape_id: str, changes: dict):
+    def update_shape(self, shape_id: str, changes: dict, expected_version: int = None) -> bool:
         for shape in self.shapes:
             if shape.get("id") == shape_id:
+                if expected_version is not None:
+                    current_version = shape.get("version", 1)
+                    if expected_version != current_version:
+                        return False
                 shape.update(changes)
-                return
+                shape["version"] = shape.get("version", 1) + 1
+                return True
+        return False
+
+    def get_shape(self, shape_id: str) -> dict | None:
+        for shape in self.shapes:
+            if shape.get("id") == shape_id:
+                return shape
+        return None
 
     def delete_shape(self, shape_id: str):
         self.shapes = [s for s in self.shapes if s.get("id") != shape_id]

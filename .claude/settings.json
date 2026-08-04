@@ -1,11 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(D:\\whiteboard\\*)",
-      "Write(D:\\whiteboard\\*)",
-      "Glob(D:\\whiteboard\\*)",
-      "Read(D:\\whiteboard\\*)",
-      "Edit(D:\\whiteboard\\*)"
+      "Bash(D:\\Projects\\whiteboard\\*)",
+      "Write(D:\\Projects\\whiteboard\\*)",
+      "Glob(D:\\Projects\\whiteboard\\*)",
+      "Read(D:\\Projects\\whiteboard\\*)",
+      "Edit(D:\\Projects\\whiteboard\\*)"
     ]
   }
 }

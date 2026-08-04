@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Copy, LogOut, Users, Link, Wifi, WifiOff, RefreshCw } from 'lucide-react';
 import { useCanvasStore } from '../store/useCanvasStore';
 import { connect, disconnect } from '../services/websocket';
 import { UserList } from './UserList';
@@ -19,12 +20,13 @@ export function RoomPanel() {
   const userName = useCanvasStore((s) => s.userName);
   const wsConnected = useCanvasStore((s) => s.wsConnected);
   const wsReconnecting = useCanvasStore((s) => s.wsReconnecting);
+  const users = useCanvasStore((s) => s.users);
 
   const [joinInput, setJoinInput] = useState('');
   const [nameInput, setNameInput] = useState(() => {
-    const stored = localStorage.getItem('wb-username');
-    return stored || '';
+    return localStorage.getItem('wb-username') || '';
   });
+  const [copied, setCopied] = useState(false);
 
   const handleCreateRoom = () => {
     if (!nameInput.trim()) return;
@@ -53,105 +55,141 @@ export function RoomPanel() {
     useCanvasStore.getState().loadShapes([]);
     useCanvasStore.getState().setUsers([]);
     useCanvasStore.getState().setSelectedId(null);
-    // Clear remote cursors
     const store = useCanvasStore.getState();
-    Object.keys(store.remoteCursors).forEach(k => store.removeRemoteCursor(k));
+    Object.keys(store.remoteCursors).forEach((k) => store.removeRemoteCursor(k));
   };
 
   const handleCopyLink = () => {
     const link = `${window.location.origin}?room=${roomId}`;
-    navigator.clipboard.writeText(link).catch(() => {});
+    navigator.clipboard.writeText(link).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {});
   };
 
+  // ─── In-Room: Minimal corner widget ───
   if (roomId) {
     return (
-      <div className="fixed top-4 left-4 bg-gray-800/90 backdrop-blur rounded-xl p-3 shadow-xl border border-gray-700 z-50 min-w-[200px]">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            {wsConnected ? (
-              <div className="w-2 h-2 rounded-full bg-green-500" />
-            ) : wsReconnecting ? (
-              <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-            ) : (
-              <div className="w-2 h-2 rounded-full bg-red-500" />
-            )}
-            <span className="text-sm text-gray-300">
-              {wsConnected ? (
-                <>Room: <span className="text-white font-mono">{roomId}</span></>
-              ) : wsReconnecting ? (
-                <span className="text-yellow-400">Reconnecting...</span>
-              ) : (
-                <span className="text-red-400">Disconnected</span>
-              )}
-            </span>
+      <div className="fixed top-3 right-3 z-panel hover-expand-trigger select-none">
+        {/* Always-visible status bar */}
+        <div className="glass-panel px-3 py-2 flex items-center gap-2.5 cursor-pointer min-w-[160px]">
+          {/* Connection status */}
+          {wsConnected ? (
+            <Wifi className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
+          ) : wsReconnecting ? (
+            <RefreshCw className="w-3.5 h-3.5 text-amber-400 animate-spin flex-shrink-0" />
+          ) : (
+            <WifiOff className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+          )}
+
+          {/* Room code */}
+          <span className="text-xs text-slate-300 font-mono tracking-wider font-medium">
+            {roomId}
+          </span>
+
+          {/* Online count */}
+          <div className="flex items-center gap-1 ml-auto">
+            <Users className="w-3 h-3 text-slate-500" />
+            <span className="text-[11px] text-slate-400 tabular-nums">{users.length + 1}</span>
           </div>
         </div>
-        <div className="flex gap-1 mb-2">
-          <button
-            onClick={handleCopyLink}
-            className="flex-1 text-xs px-2 py-1 rounded bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
-          >
-            Copy Link
-          </button>
-          <button
-            onClick={handleLeaveRoom}
-            className="flex-1 text-xs px-2 py-1 rounded bg-red-900/50 text-red-300 hover:bg-red-800/50 transition-colors"
-          >
-            Leave
-          </button>
+
+        {/* Expandable details (on hover) */}
+        <div className="hover-expand-content">
+          <div className="glass-panel mt-1.5 px-3 py-2.5 min-w-[200px]">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] text-slate-500 uppercase tracking-wider">Room</span>
+              <span className="text-xs text-slate-200 font-mono font-medium">{roomId}</span>
+            </div>
+
+            <UserList />
+
+            <div className="flex gap-1.5 mt-3">
+              <button
+                onClick={handleCopyLink}
+                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] text-slate-300 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 transition-all cursor-pointer"
+              >
+                {copied ? (
+                  <>
+                    <span className="text-green-400 text-xs">Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Link className="w-3 h-3" />
+                    Copy Link
+                  </>
+                )}
+              </button>
+              <button
+                onClick={handleLeaveRoom}
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/30 transition-all cursor-pointer"
+              >
+                <LogOut className="w-3 h-3" />
+                Leave
+              </button>
+            </div>
+          </div>
         </div>
-        <UserList />
       </div>
     );
   }
 
+  // ─── Login: Centered join/create dialog ───
   return (
-    <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-800/95 backdrop-blur rounded-xl p-6 shadow-2xl border border-gray-700 z-50 w-[320px]">
-      <h1 className="text-xl font-bold text-white mb-4 text-center">Collaborative Whiteboard</h1>
+    <div className="fixed inset-0 flex items-center justify-center z-modal bg-black/60 backdrop-blur-sm">
+      <div className="glass-panel p-6 w-[340px] max-w-[90vw]">
+        <h1 className="text-lg font-semibold text-slate-100 mb-5 text-center tracking-tight">
+          Collaborative Whiteboard
+        </h1>
 
-      <div className="mb-4">
-        <label className="block text-sm text-gray-400 mb-1">Your Name</label>
-        <input
-          type="text"
-          value={nameInput}
-          onChange={(e) => setNameInput(e.target.value)}
-          placeholder="Enter your name..."
-          className="w-full px-3 py-2 bg-gray-700 rounded-lg text-white text-sm outline-none focus:ring-2 focus:ring-blue-500"
-          maxLength={20}
-        />
-      </div>
+        <div className="mb-4">
+          <label className="block text-[11px] text-slate-500 mb-1.5 font-medium tracking-wide uppercase">
+            Your Name
+          </label>
+          <input
+            type="text"
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            placeholder="Enter your name..."
+            className="w-full px-3 py-2 bg-white/5 rounded-lg text-sm text-slate-200 outline-none border border-white/10 focus:border-accent focus:ring-1 focus:ring-accent/30 placeholder:text-slate-600 transition-all"
+            maxLength={20}
+            autoFocus
+          />
+        </div>
 
-      <button
-        onClick={handleCreateRoom}
-        disabled={!nameInput.trim()}
-        className="w-full mb-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-      >
-        Create New Room
-      </button>
-
-      <div className="flex items-center gap-2 mb-3">
-        <div className="flex-1 border-t border-gray-700" />
-        <span className="text-xs text-gray-500">or join</span>
-        <div className="flex-1 border-t border-gray-700" />
-      </div>
-
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={joinInput}
-          onChange={(e) => setJoinInput(e.target.value)}
-          placeholder="Room code..."
-          className="flex-1 px-3 py-2 bg-gray-700 rounded-lg text-white text-sm outline-none focus:ring-2 focus:ring-blue-500"
-          maxLength={20}
-          onKeyDown={(e) => e.key === 'Enter' && handleJoinRoom()}
-        />
         <button
-          onClick={handleJoinRoom}
-          disabled={!joinInput.trim() || !nameInput.trim()}
-          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+          onClick={handleCreateRoom}
+          disabled={!nameInput.trim()}
+          className="w-full mb-3 px-4 py-2.5 bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all text-sm font-medium cursor-pointer"
         >
-          Join
+          Create New Room
         </button>
+
+        <div className="flex items-center gap-3 mb-3">
+          <div className="flex-1 h-px bg-white/8" />
+          <span className="text-[10px] text-slate-600 font-medium">or join</span>
+          <div className="flex-1 h-px bg-white/8" />
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={joinInput}
+            onChange={(e) => setJoinInput(e.target.value)}
+            placeholder="Room code..."
+            className="flex-1 px-3 py-2 bg-white/5 rounded-lg text-sm text-slate-200 outline-none border border-white/10 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 placeholder:text-slate-600 transition-all font-mono"
+            maxLength={20}
+            onKeyDown={(e) => e.key === 'Enter' && handleJoinRoom()}
+            aria-label="Room code"
+          />
+          <button
+            onClick={handleJoinRoom}
+            disabled={!joinInput.trim() || !nameInput.trim()}
+            className="px-5 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all text-sm font-medium cursor-pointer"
+          >
+            Join
+          </button>
+        </div>
       </div>
     </div>
   );

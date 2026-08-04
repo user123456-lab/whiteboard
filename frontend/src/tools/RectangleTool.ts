@@ -30,6 +30,7 @@ export class RectangleTool {
       height,
       stroke: store.toolColor,
       strokeWidth: store.toolWidth,
+      fill: store.toolFill !== 'transparent' ? store.toolFill + '80' : 'transparent',
       dash: [6, 3],
     });
     layer.add(this.previewRect);
@@ -56,6 +57,8 @@ export class RectangleTool {
       height,
       color: store.toolColor,
       strokeWidth: store.toolWidth,
+      fill: store.toolFill !== 'transparent' ? store.toolFill : undefined,
+      version: 1,
       createdAt: Date.now(),
     };
   }

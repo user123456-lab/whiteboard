@@ -49,6 +49,7 @@ export class BrushTool {
       points: [...this.points],
       color: store.toolColor,
       strokeWidth: store.toolWidth,
+      version: 1,
       createdAt: Date.now(),
     };
 

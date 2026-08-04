@@ -37,40 +37,76 @@ export class EraserTool {
    */
   sweepErase(
     pos: { x: number; y: number },
-    _prevPos: { x: number; y: number } | null,
+    prevPos: { x: number; y: number } | null,
     store: CanvasState,
     excludeIds: Set<string>,
     eraserRadius: number
   ): SweepResult {
     const result: SweepResult = { shapesToUpdate: [], shapesToCreate: [], shapesToDelete: [] };
 
-    for (const shape of store.shapes) {
-      if (!this.canErase(shape, store.userId)) continue;
-      if (shape.locked && shape.userId !== store.userId) continue;
+    // Build eraser-circle centers along the path from prevPos to pos
+    const centers: Array<{ x: number; y: number }> = [];
+    if (prevPos) {
+      const dx = pos.x - prevPos.x;
+      const dy = pos.y - prevPos.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const step = Math.max(1, eraserRadius * 1.2);
+      const steps = Math.ceil(dist / step);
+      for (let i = 0; i <= steps; i++) {
+        const t = steps === 0 ? 0 : i / steps;
+        centers.push({
+          x: prevPos.x + dx * t,
+          y: prevPos.y + dy * t,
+        });
+      }
+    } else {
+      centers.push(pos);
+    }
 
-      if (shape.type === 'brush') {
-        if (excludeIds.has(shape.id)) continue;
+    // Dedup brush hits within this single sweepErase call only.
+    // Brushes must be re-processable across mousemove events since
+    // each mousemove clips different portions.  Geometric shapes
+    // continue using cross-mousemove excludeIds (once deleted, done).
+    const brushesHitThisCall = new Set<string>();
 
-        const fragments = this.clipBrushStroke(shape.points, pos, eraserRadius);
+    for (const center of centers) {
+      for (const shape of store.shapes) {
+        if (!this.canErase(shape, store.userId)) continue;
+        if (shape.locked && shape.userId !== store.userId) continue;
 
-        if (fragments === null) continue; // no intersection at all
+        if (shape.type === 'brush') {
+          if (brushesHitThisCall.has(shape.id)) continue;
 
-        if (fragments.length === 0) {
-          result.shapesToDelete.push(shape.id);
+          const fragments = this.clipBrushStroke(shape.points, center, eraserRadius);
+
+          if (fragments === null) continue; // no intersection at all
+
+          brushesHitThisCall.add(shape.id);
+
+          if (fragments.length === 0) {
+            result.shapesToDelete.push(shape.id);
+          } else {
+            result.shapesToUpdate.push({ shapeId: shape.id, points: fragments[0] });
+            for (let i = 1; i < fragments.length; i++) {
+              result.shapesToCreate.push({
+                ...shape,
+                id: crypto.randomUUID(),
+                points: fragments[i],
+                createdAt: Date.now(),
+                version: 1,
+              });
+            }
+          }
         } else {
-          result.shapesToUpdate.push({ shapeId: shape.id, points: fragments[0] });
-          for (let i = 1; i < fragments.length; i++) {
-            result.shapesToCreate.push({
-              ...shape,
-              id: crypto.randomUUID(),
-              points: fragments[i],
-              createdAt: Date.now(),
-            });
+          // Geometric shapes (rectangle, circle, arrow, text): cross-mousemove dedup
+          if (excludeIds.has(shape.id)) continue;
+
+          if (this.shapeIntersectsCircle(shape, center.x, center.y, eraserRadius)) {
+            excludeIds.add(shape.id);
+            result.shapesToDelete.push(shape.id);
           }
         }
       }
-      // Geometric shapes: partial erasing not feasible for vector rect/circle/arrow/text.
-      // Only deleted on click (tryErase), NOT on sweep.
     }
 
     return result;

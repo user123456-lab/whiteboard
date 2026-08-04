@@ -30,6 +30,7 @@ export class TextTool {
       fontSize: store.toolFontSize ?? 18,
       color: store.toolColor,
       strokeWidth: store.toolWidth,
+      version: 1,
       createdAt: Date.now(),
     };
   }

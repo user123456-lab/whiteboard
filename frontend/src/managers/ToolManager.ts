@@ -10,6 +10,14 @@ import { TextTool } from '../tools/TextTool';
 import { SelectTool } from '../tools/SelectTool';
 import { EraserTool, type SweepResult } from '../tools/EraserTool';
 
+function offsetPoints(points: number[], dx: number, dy: number): number[] {
+  const result: number[] = [];
+  for (let i = 0; i < points.length; i += 2) {
+    result.push(points[i] + dx, points[i + 1] + dy);
+  }
+  return result;
+}
+
 export class ToolManager {
 
   private brushTool = new BrushTool();
@@ -70,24 +78,21 @@ export class ToolManager {
         return;
       }
 
-      // Text tool: click text → edit, click outside while editing → close, empty → create
+      // Text tool: click anywhere → create new text and enter edit mode.
+      // Existing text: hover shows dashed border, double-click enters edit (handled by Stage onDblClick).
       if (store.activeTool === 'text') {
-        const target = e.target;
-        // Click on existing own text → enter edit (even on 2nd click of dblclick)
-        if (target && target !== this.stage && target.attrs?.id) {
-          const shapeId = target.attrs.id as string;
-          const shape = store.shapes.find((s) => s.id === shapeId);
-          if (shape && shape.type === 'text' && shape.userId === store.userId) {
-            store.setEditingTextId(shapeId);
-            return;
-          }
-        }
         // Click outside while editing → close editor, don't create new
         if (store.editingTextId) {
           store.setEditingTextId(null);
           return;
         }
-        // Empty canvas → create new text
+        // Click on existing text → skip (handled by double-click)
+        const target = e.target;
+        if (target && target !== this.stage && target.attrs?.id) {
+          const shape = store.shapes.find((s) => s.id === target.attrs.id as string);
+          if (shape && shape.type === 'text') return;
+        }
+        // Empty area → create new text, immediately enter edit mode on mouseup
         store.setSelectedId(null);
         this.isDrawing = true;
         this.textTool.onMouseDown(pos, store, this.previewLayer!);
@@ -137,6 +142,7 @@ export class ToolManager {
           sendMessage(getWs(), 'shape_updated', {
             shapeId: shape.id,
             changes: { x: (shape as Shape & { x: number }).x, y: (shape as Shape & { y: number }).y },
+            expectedVersion: shape.version ?? 1,
           }, store.userId);
         }
         this.selectTool.onMouseUp(pos, store, this.previewLayer!);
@@ -171,6 +177,50 @@ export class ToolManager {
 
     // Tool shortcuts
     if (e.ctrlKey || e.metaKey) {
+      // Ctrl+C — copy selected shape to clipboard
+      if (e.key === 'c') {
+        if (store.selectedId) {
+          const shape = store.shapes.find((s) => s.id === store.selectedId);
+          if (shape) {
+            store.setClipboard(structuredClone(shape));
+          }
+        }
+        return;
+      }
+
+      // Ctrl+V — paste shape from clipboard
+      if (e.key === 'v') {
+        e.preventDefault();
+        if (store.clipboard) {
+          const newShape: Shape = {
+            ...structuredClone(store.clipboard),
+            id: crypto.randomUUID(),
+            createdAt: Date.now(),
+            version: undefined,
+          } as Shape;
+
+          // Offset position for non-brush/arrow shapes
+          if ('x' in newShape && 'y' in newShape) {
+            (newShape as Shape & { x: number }).x += 20;
+            (newShape as Shape & { y: number }).y += 20;
+          }
+
+          // Offset points for brush/arrow shapes
+          if ('points' in newShape && Array.isArray(newShape.points)) {
+            (newShape as Shape & { points: number[] }).points = offsetPoints(
+              (newShape as Shape & { points: number[] }).points,
+              20,
+              20,
+            );
+          }
+
+          store.addShape(newShape);
+          sendMessage(getWs(), 'shape_created', { shape: newShape }, store.userId);
+          store.setSelectedId(newShape.id);
+        }
+        return;
+      }
+
       if (e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         const shapeId = store.undoOwn(store.userId);
@@ -187,6 +237,18 @@ export class ToolManager {
         }
         return;
       }
+
+      // Ctrl+] — move shape to top
+      if (e.key === ']') {
+        if (store.selectedId) store.moveShapeTop(store.selectedId);
+        return;
+      }
+      // Ctrl+[ — move shape to bottom
+      if (e.key === '[') {
+        if (store.selectedId) store.moveShapeBottom(store.selectedId);
+        return;
+      }
+
       return;
     }
 
@@ -216,6 +278,7 @@ export class ToolManager {
             sendMessage(getWs(), 'shape_updated', {
               shapeId: shape.id,
               changes: { locked: newLocked },
+              expectedVersion: shape.version ?? 1,
             }, store.userId);
           }
         }
@@ -223,6 +286,17 @@ export class ToolManager {
       case 'escape':
         store.setSelectedId(null);
         this.cancelAll();
+        break;
+      // Layer ordering (when shape is selected)
+      case ']':
+        if (store.selectedId) {
+          store.moveShapeUp(store.selectedId);
+        }
+        break;
+      case '[':
+        if (store.selectedId) {
+          store.moveShapeDown(store.selectedId);
+        }
         break;
     }
   }
@@ -258,30 +332,54 @@ export class ToolManager {
     sendMessage(getWs(), 'shape_deleted', { shapeId }, store.userId);
   }
 
+  private lastSweepTime = 0;
+
   private applySweepErase(pos: { x: number; y: number }): void {
+    // Throttle to at most 60fps
+    const now = performance.now();
+    if (now - this.lastSweepTime < 16) return;
+    this.lastSweepTime = now;
+
     const store = useCanvasStore.getState();
     const prev = this.lastEraserPos;
     this.lastEraserPos = pos;
 
     const result: SweepResult = this.eraserTool.sweepErase(pos, prev, store, this.erasedInStroke, store.eraserRadius);
 
+    if (result.shapesToUpdate.length === 0 && result.shapesToCreate.length === 0 && result.shapesToDelete.length === 0) {
+      return;
+    }
+
+    // Snapshot pre-update versions for WebSocket expectedVersion
+    const preUpdateVersions = new Map<string, number>();
     for (const upd of result.shapesToUpdate) {
-      store.updateShape(upd.shapeId, { points: upd.points });
+      const s = store.shapes.find((shape) => shape.id === upd.shapeId);
+      if (s) preUpdateVersions.set(upd.shapeId, s.version ?? 1);
+    }
+
+    // Batch all store mutations into a single Zustand set() to avoid cascading re-renders
+    store.batchApplySweepResult({
+      shapesToUpdate: result.shapesToUpdate,
+      shapesToCreate: result.shapesToCreate,
+      shapesToDelete: result.shapesToDelete,
+    });
+
+    // Send individual WebSocket messages — use pre-update versions
+    for (const upd of result.shapesToUpdate) {
       sendMessage(getWs(), 'shape_updated', {
         shapeId: upd.shapeId,
         changes: { points: upd.points },
+        expectedVersion: preUpdateVersions.get(upd.shapeId) ?? 1,
       }, store.userId);
     }
 
     for (const newShape of result.shapesToCreate) {
-      store.addShape(newShape);
       sendMessage(getWs(), 'shape_created', { shape: newShape }, store.userId);
     }
 
     for (const shapeId of result.shapesToDelete) {
       if (this.erasedInStroke.has(shapeId)) continue;
       this.erasedInStroke.add(shapeId);
-      store.deleteShape(shapeId);
       sendMessage(getWs(), 'shape_deleted', { shapeId }, store.userId);
     }
   }

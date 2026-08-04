@@ -25,7 +25,7 @@ export class ArrowTool {
       lineCap: 'round',
       pointerLength: 10,
       pointerWidth: 8,
-      fill: store.toolColor,
+      fill: store.toolFill !== 'transparent' ? store.toolFill + '80' : store.toolColor + '80',
       dash: [6, 3],
     });
     layer.add(this.previewLine);
@@ -49,6 +49,8 @@ export class ArrowTool {
       points: [this.startX, this.startY, pos.x, pos.y],
       color: store.toolColor,
       strokeWidth: store.toolWidth,
+      fill: store.toolFill !== 'transparent' ? store.toolFill : undefined,
+      version: 1,
       createdAt: Date.now(),
     };
   }

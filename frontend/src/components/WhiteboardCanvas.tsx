@@ -1,11 +1,13 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
-import { Stage, Layer, Line, Rect, Circle, Arrow, Text, Transformer } from 'react-konva';
+import { Stage, Layer, Line, Rect, Circle, Arrow, Text, Transformer, Image as KonvaImage } from 'react-konva';
 import type Konva from 'konva';
 import { useCanvasStore } from '../store/useCanvasStore';
-import { sendMessage, getWs } from '../services/websocket';
 import { ToolManager } from '../managers/ToolManager';
 import { CursorOverlay } from './CursorOverlay';
-import type { Shape } from '../types';
+import { TextEditor } from './TextEditor';
+import { GridBackground } from './GridBackground';
+import type { Shape, ImageShape } from '../types';
+import { sendMessage, getWs } from '../services/websocket';
 
 const toolManager = new ToolManager();
 
@@ -30,6 +32,39 @@ function buildEraserCursor(radius: number): string {
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${cx} ${cx}, crosshair`;
 }
 
+function ImageRenderer({ shape }: { shape: ImageShape }) {
+  const [img, setImg] = useState<HTMLImageElement | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    setError(false);
+    setImg(null);
+    const image = new window.Image();
+    image.onload = () => setImg(image);
+    image.onerror = () => setError(true);
+    image.src = shape.imageData;
+    return () => { image.onload = null; image.onerror = null; };
+  }, [shape.imageData]);
+
+  if (error) {
+    return (
+      <Rect x={shape.x} y={shape.y} width={shape.width} height={shape.height}
+        fill="#333" stroke="#666" strokeWidth={1} dash={[4, 4]} />
+    );
+  }
+  if (!img) return null;
+  return (
+    <KonvaImage
+      image={img}
+      x={shape.x}
+      y={shape.y}
+      width={shape.width}
+      height={shape.height}
+      listening={true}
+    />
+  );
+}
+
 export function WhiteboardCanvas() {
   const stageRef = useRef<Konva.Stage>(null);
   const previewLayerRef = useRef<Konva.Layer>(null);
@@ -43,13 +78,11 @@ export function WhiteboardCanvas() {
   const stageX = useCanvasStore((s) => s.stageX);
   const stageY = useCanvasStore((s) => s.stageY);
   const editingTextId = useCanvasStore((s) => s.editingTextId);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const exportCounter = useCanvasStore((s) => s.exportCounter);
 
   useEffect(() => {
     if (editingTextId) {
       setHoveredTextId(null);
-      // Auto-select all text when entering edit mode
-      requestAnimationFrame(() => textareaRef.current?.select());
     }
   }, [editingTextId]);
 
@@ -58,6 +91,16 @@ export function WhiteboardCanvas() {
       useCanvasStore.getState().setEditingTextId(null);
     }
   }, [shapes, editingTextId]);
+
+  useEffect(() => {
+    if (exportCounter > 0 && stageRef.current) {
+      const dataURL = stageRef.current.toDataURL({ mimeType: 'image/png', pixelRatio: 2 });
+      const link = document.createElement('a');
+      link.download = `whiteboard-${Date.now()}.png`;
+      link.href = dataURL;
+      link.click();
+    }
+  }, [exportCounter]);
 
   const isPanningRef = useRef(false);
   const panStartRef = useRef({ x: 0, y: 0, stageX: 0, stageY: 0 });
@@ -102,6 +145,12 @@ export function WhiteboardCanvas() {
         isPanningRef.current = false;
         setIsPanning(false);
       }
+      if (e.button === 0) {
+        // 正在编辑文本时不调用 cancelAll，避免清除 editingTextId 导致编辑器消失
+        if (!useCanvasStore.getState().editingTextId) {
+          toolManager.cancelAll();
+        }
+      }
     };
     window.addEventListener('mouseup', handleWindowMouseUp);
     return () => window.removeEventListener('mouseup', handleWindowMouseUp);
@@ -122,6 +171,114 @@ export function WhiteboardCanvas() {
     }
   }, [selectedId, shapes]);
 
+  // Drag-and-drop image files onto the canvas
+  useEffect(() => {
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    };
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const file = e.dataTransfer?.files?.[0];
+      if (!file || !file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new window.Image();
+        img.onload = () => {
+          const stage = stageRef.current;
+          if (!stage) return;
+          const maxWidth = 400;
+          const scale = Math.min(1, maxWidth / img.width);
+          const w = img.width * scale;
+          const h = img.height * scale;
+          const center = stage.getPointerPosition() || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+          const transform = stage.getAbsoluteTransform().copy().invert();
+          const pos = transform.point(center);
+          const store = useCanvasStore.getState();
+          const newShape: ImageShape = {
+            id: crypto.randomUUID(),
+            type: 'image',
+            userId: store.userId,
+            x: pos.x - w / 2,
+            y: pos.y - h / 2,
+            width: w,
+            height: h,
+            imageData: reader.result as string,
+            color: '#000000',
+            strokeWidth: 0,
+            createdAt: Date.now(),
+            version: 1,
+          };
+          store.addShape(newShape);
+          sendMessage(getWs(), 'shape_created', { shape: newShape }, store.userId);
+        };
+        img.src = reader.result as string;
+      };
+      reader.readAsDataURL(file);
+    };
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('drop', handleDrop);
+    return () => {
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, []);
+
+  // Paste image from clipboard (Ctrl+V)
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      if (document.activeElement?.tagName === 'TEXTAREA') return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (!file) continue;
+          const reader = new FileReader();
+          reader.onload = () => {
+            const img = new window.Image();
+            img.onload = () => {
+              const stage = stageRef.current;
+              if (!stage) return;
+              const maxWidth = 400;
+              const scale = Math.min(1, maxWidth / img.width);
+              const w = img.width * scale;
+              const h = img.height * scale;
+              const center = stage.getPointerPosition() || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+              const transform = stage.getAbsoluteTransform().copy().invert();
+              const pos = transform.point(center);
+              const store = useCanvasStore.getState();
+              const newShape: ImageShape = {
+                id: crypto.randomUUID(),
+                type: 'image',
+                userId: store.userId,
+                x: pos.x - w / 2,
+                y: pos.y - h / 2,
+                width: w,
+                height: h,
+                imageData: reader.result as string,
+                color: '#000000',
+                strokeWidth: 0,
+                createdAt: Date.now(),
+                version: 1,
+              };
+              store.addShape(newShape);
+              sendMessage(getWs(), 'shape_created', { shape: newShape }, store.userId);
+            };
+            img.src = reader.result as string;
+          };
+          reader.readAsDataURL(file);
+          break;
+        }
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
+
   const renderShape = useCallback((shape: Shape) => {
     const common = {
       id: shape.id,
@@ -137,7 +294,7 @@ export function WhiteboardCanvas() {
             <Line
               {...common}
               points={shape.points}
-              tension={0.5}
+              tension={0}
               lineCap="round"
               lineJoin="round"
               globalCompositeOperation="source-over"
@@ -149,6 +306,7 @@ export function WhiteboardCanvas() {
                 text="🔒"
                 fontSize={14}
                 fill="#F59E0B"
+                listening={false}
               />
             )}
           </>
@@ -162,6 +320,7 @@ export function WhiteboardCanvas() {
               y={shape.y}
               width={shape.width}
               height={shape.height}
+              fill={shape.fill || 'transparent'}
             />
             {shape.locked && (
               <Text
@@ -170,6 +329,7 @@ export function WhiteboardCanvas() {
                 text="🔒"
                 fontSize={14}
                 fill="#F59E0B"
+                listening={false}
               />
             )}
           </>
@@ -182,6 +342,7 @@ export function WhiteboardCanvas() {
               x={shape.x}
               y={shape.y}
               radius={shape.radius}
+              fill={shape.fill || 'transparent'}
             />
             {shape.locked && (
               <Text
@@ -190,6 +351,7 @@ export function WhiteboardCanvas() {
                 text="🔒"
                 fontSize={14}
                 fill="#F59E0B"
+                listening={false}
               />
             )}
           </>
@@ -200,7 +362,7 @@ export function WhiteboardCanvas() {
             <Arrow
               {...common}
               points={shape.points}
-              fill={shape.color}
+              fill={shape.fill || shape.color}
               pointerLength={10}
               pointerWidth={8}
             />
@@ -211,6 +373,7 @@ export function WhiteboardCanvas() {
                 text="🔒"
                 fontSize={14}
                 fill="#F59E0B"
+                listening={false}
               />
             )}
           </>
@@ -254,11 +417,14 @@ export function WhiteboardCanvas() {
                 text="🔒"
                 fontSize={14}
                 fill="#F59E0B"
+                listening={false}
               />
             )}
           </>
         );
       }
+      case 'image':
+        return <ImageRenderer key={shape.id} shape={shape as ImageShape} />;
       default:
         return null;
     }
@@ -372,8 +538,8 @@ export function WhiteboardCanvas() {
       onContextMenu={(e) => e.evt.preventDefault()}
     >
       {/* Grid Layer */}
-      <Layer>
-        {/* Optional: render a dot grid here */}
+      <Layer listening={false}>
+        <GridBackground />
       </Layer>
 
       {/* Shape Layer */}
@@ -405,54 +571,7 @@ export function WhiteboardCanvas() {
         if (!shape || shape.type !== 'text') return null;
         const stage = stageRef.current;
         if (!stage) return null;
-        const absPos = stage.getAbsoluteTransform().point({ x: shape.x, y: shape.y });
-        const scale = stage.scaleX();
-
-        return (
-          <textarea
-            ref={textareaRef}
-            autoFocus
-            defaultValue={shape.text}
-            style={{
-              position: 'absolute',
-              left: absPos.x,
-              top: absPos.y,
-              fontSize: (shape.fontSize ?? 18) * scale,
-              color: shape.color,
-              background: 'rgba(30,30,40,0.95)',
-              border: '1px solid #555',
-              borderRadius: 4,
-              padding: 4,
-              minWidth: 100,
-              outline: 'none',
-              resize: 'both',
-              zIndex: 100,
-              fontFamily: 'sans-serif',
-              lineHeight: 1.3,
-            }}
-            onBlur={(e) => {
-              const store = useCanvasStore.getState();
-              const text = e.target.value.trim();
-              if (text) {
-                const changes: Record<string, unknown> = { text, fontSize: store.toolFontSize };
-                store.updateShape(editingTextId, changes);
-                sendMessage(getWs(), 'shape_updated', {
-                  shapeId: editingTextId,
-                  changes,
-                }, store.userId);
-              }
-              store.setEditingTextId(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                (e.target as HTMLTextAreaElement).blur();
-              }
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                (e.target as HTMLTextAreaElement).blur();
-              }
-            }}
-          />
-        );
+        return <TextEditor key={editingTextId} shape={shape} stage={stage} />;
       })()}
     </>
   );

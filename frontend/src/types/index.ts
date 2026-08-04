@@ -1,6 +1,6 @@
 export type ToolType = 'select' | 'brush' | 'rectangle' | 'circle' | 'arrow' | 'text' | 'eraser';
 
-export type ShapeType = 'brush' | 'rectangle' | 'circle' | 'arrow' | 'text';
+export type ShapeType = 'brush' | 'rectangle' | 'circle' | 'arrow' | 'text' | 'image';
 
 export interface BaseShape {
   id: string;
@@ -11,6 +11,7 @@ export interface BaseShape {
   createdAt: number;
   version?: number;
   locked?: boolean;
+  fill?: string;
 }
 
 export interface BrushShape extends BaseShape {
@@ -46,7 +47,16 @@ export interface TextShape extends BaseShape {
   fontSize?: number;
 }
 
-export type Shape = BrushShape | RectangleShape | CircleShape | ArrowShape | TextShape;
+export interface ImageShape extends BaseShape {
+  type: 'image';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  imageData: string;  // base64 data URL
+}
+
+export type Shape = BrushShape | RectangleShape | CircleShape | ArrowShape | TextShape | ImageShape;
 
 export interface UserInfo {
   userId: string;
@@ -60,6 +70,16 @@ export interface CursorPosition {
   color: string;
   x: number;
   y: number;
+}
+
+export interface HistoryEntry {
+  id: string;
+  shapeId: string;
+  shapeType: ShapeType;
+  action: 'created' | 'updated' | 'deleted';
+  userId: string;
+  timestamp: number;
+  label: string;
 }
 
 export interface WSMessage {

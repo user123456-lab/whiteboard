@@ -98,9 +98,20 @@ async def websocket_endpoint(
             elif msg_type == "shape_updated":
                 shape_id = payload.get("shapeId")
                 changes = payload.get("changes", {})
+                expected_version = payload.get("expectedVersion")
                 if shape_id:
-                    room.update_shape(shape_id, changes)
-                    await room.broadcast(message, exclude_user_id=userId)
+                    success = room.update_shape(shape_id, changes, expected_version)
+                    if success:
+                        await room.broadcast(message, exclude_user_id=userId)
+                    else:
+                        shape = room.get_shape(shape_id)
+                        if shape:
+                            await websocket.send_json({
+                                "type": "shape_conflict",
+                                "userId": "server",
+                                "timestamp": int(time.time() * 1000),
+                                "payload": {"shape": shape},
+                            })
 
             elif msg_type == "shape_deleted":
                 shape_id = payload.get("shapeId")
