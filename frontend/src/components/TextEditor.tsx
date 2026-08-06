@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo, useCallback } from 'react';
+import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react';
 import type Konva from 'konva';
 import type { TextShape } from '../types';
 import { useCanvasStore } from '../store/useCanvasStore';
@@ -20,9 +20,12 @@ export function TextEditor({ shape, stage }: TextEditorProps) {
     requestAnimationFrame(() => textareaRef.current?.select());
   }, []);
 
-  // Recalculate absolute position whenever scale or position changes
-  const absPos = useMemo(() => {
-    return stage.getAbsoluteTransform().point({ x: shape.x, y: shape.y });
+  const [absPos, setAbsPos] = useState({ x: shape.x, y: shape.y });
+
+  useLayoutEffect(() => {
+    if (stage) {
+      setAbsPos(stage.getAbsoluteTransform().point({ x: shape.x, y: shape.y }));
+    }
   }, [stageScale, stageX, stageY, shape.x, shape.y, stage]);
 
   const handleBlur = useCallback(

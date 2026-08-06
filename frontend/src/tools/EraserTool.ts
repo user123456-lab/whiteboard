@@ -91,20 +91,66 @@ export class EraserTool {
               result.shapesToCreate.push({
                 ...shape,
                 id: crypto.randomUUID(),
+                type: 'brush' as const,
                 points: fragments[i],
                 createdAt: Date.now(),
                 version: 1,
               });
             }
           }
-        } else {
-          // Geometric shapes (rectangle, circle, arrow, text): cross-mousemove dedup
+        } else if (shape.type === 'rectangle' || shape.type === 'circle' || shape.type === 'arrow' || shape.type === 'text') {
           if (excludeIds.has(shape.id)) continue;
 
-          if (this.shapeIntersectsCircle(shape, center.x, center.y, eraserRadius)) {
-            excludeIds.add(shape.id);
+          if (!this.shapeIntersectsCircle(shape, center.x, center.y, eraserRadius)) continue;
+          excludeIds.add(shape.id);
+
+          // Text: whole-delete only
+          if (shape.type === 'text') {
             result.shapesToDelete.push(shape.id);
+            continue;
           }
+
+          // Decompose geometric outline into line segments for partial erase
+          const segments: Array<[number, number, number, number]> = [];
+          if (shape.type === 'rectangle') {
+            const r = shape;
+            segments.push(
+              [r.x, r.y, r.x + r.width, r.y],
+              [r.x + r.width, r.y, r.x + r.width, r.y + r.height],
+              [r.x + r.width, r.y + r.height, r.x, r.y + r.height],
+              [r.x, r.y + r.height, r.x, r.y],
+            );
+          } else if (shape.type === 'circle') {
+            const c = shape;
+            const N = 48;
+            for (let i = 0; i < N; i++) {
+              const a1 = (2 * Math.PI * i) / N;
+              const a2 = (2 * Math.PI * (i + 1)) / N;
+              segments.push([
+                c.x + c.radius * Math.cos(a1), c.y + c.radius * Math.sin(a1),
+                c.x + c.radius * Math.cos(a2), c.y + c.radius * Math.sin(a2),
+              ]);
+            }
+          } else if (shape.type === 'arrow') {
+            const a = shape;
+            segments.push([a.points[0], a.points[1], a.points[2], a.points[3]]);
+          }
+
+          const remainingFragments = this.clipSegmentsToFragments(segments, center, eraserRadius);
+          for (const frag of remainingFragments) {
+            result.shapesToCreate.push({
+              id: crypto.randomUUID(),
+              type: 'brush' as const,
+              userId: shape.userId,
+              color: shape.color,
+              strokeWidth: shape.strokeWidth,
+              points: frag,
+              createdAt: Date.now(),
+              version: 1,
+              ...(shape.groupId ? { groupId: shape.groupId } : {}),
+            } as BrushShape);
+          }
+          result.shapesToDelete.push(shape.id);
         }
       }
     }
@@ -309,6 +355,39 @@ export class EraserTool {
       default:
         return false;
     }
+  }
+
+  /**
+   * Clip multiple line segments against a circle.
+   * Returns disconnected outside fragments separately (like clipBrushStroke).
+   */
+  private clipSegmentsToFragments(
+    segments: Array<[number, number, number, number]>,
+    center: { x: number; y: number },
+    radius: number
+  ): number[][] {
+    const fragments: number[][] = [];
+    let current: number[] = [];
+
+    for (const [x1, y1, x2, y2] of segments) {
+      const clipped = this.clipSegmentToCircle(x1, y1, x2, y2, center.x, center.y, radius);
+      for (const portion of clipped.portions) {
+        if (current.length === 0) {
+          current.push(...portion);
+        } else {
+          const lastX = current[current.length - 2];
+          const lastY = current[current.length - 1];
+          if (Math.abs(lastX - portion[0]) < 1e-6 && Math.abs(lastY - portion[1]) < 1e-6) {
+            current.push(...portion.slice(2));
+          } else {
+            if (current.length >= 4) fragments.push(current);
+            current = [...portion];
+          }
+        }
+      }
+    }
+    if (current.length >= 4) fragments.push(current);
+    return fragments;
   }
 
   private canErase(shape: Shape, userId: string): boolean {

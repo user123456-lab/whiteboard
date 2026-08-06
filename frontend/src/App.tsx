@@ -19,12 +19,13 @@ function App() {
   const showSettings = useUserPrefs((s) => s.showSettings);
 
   useEffect(() => {
-    const storedId = localStorage.getItem('wb-userid');
-    const id = storedId || crypto.randomUUID();
+    // sessionStorage = per-tab unique (multi-window testing)
+    let storedId = sessionStorage.getItem('wb-userid');
     if (!storedId) {
-      localStorage.setItem('wb-userid', id);
+      storedId = crypto.randomUUID();
+      sessionStorage.setItem('wb-userid', storedId);
     }
-    setUserId(id);
+    setUserId(storedId);
 
     const storedName = localStorage.getItem('wb-username');
     if (storedName) {

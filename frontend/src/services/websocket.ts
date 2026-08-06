@@ -88,10 +88,13 @@ function handleMessage(msg: WSMessage): void {
   const store = useCanvasStore.getState();
 
   switch (msg.type) {
-    case 'shape_created':
-      // Route through Yjs for CRDT merge
-      store.remoteCreateShape(msg.payload.shape as never);
+    case 'shape_created': {
+      const shape = msg.payload.shape;
+      if (shape && typeof shape === 'object' && 'id' in shape && 'type' in shape) {
+        store.remoteCreateShape(shape as never);
+      }
       break;
+    }
 
     case 'shape_updated': {
       const shapeId = msg.payload.shapeId as string;
@@ -100,17 +103,42 @@ function handleMessage(msg: WSMessage): void {
       break;
     }
 
+    case 'shape_updated_batch': {
+      const { updates } = msg.payload as {
+        updates: Array<{ shapeId: string; changes: Record<string, unknown> }>
+      };
+      for (const u of updates) {
+        store.remoteUpdateShape(u.shapeId, u.changes);
+      }
+      break;
+    }
+
     case 'shape_deleted':
       store.remoteDeleteShape(msg.payload.shapeId as string);
       break;
 
-    case 'cursor_move':
-      store.updateRemoteCursor(msg.payload as never);
+    case 'cursor_move': {
+      const pos = msg.payload as { x: number; y: number };
+      const user = store.users.find(u => u.userId === msg.userId);
+      if (user) {
+        store.updateRemoteCursor({
+          userId: msg.userId,
+          userName: user.userName,
+          color: user.color,
+          x: pos.x,
+          y: pos.y,
+        });
+      }
       break;
+    }
 
-    case 'user_joined':
-      store.addUser(msg.payload as never);
+    case 'user_joined': {
+      const user = msg.payload as Record<string, unknown>;
+      if (user && typeof user.userId === 'string' && typeof user.userName === 'string') {
+        store.addUser(msg.payload as never);
+      }
       break;
+    }
 
     case 'user_left':
       store.removeUser(msg.payload.userId as string);

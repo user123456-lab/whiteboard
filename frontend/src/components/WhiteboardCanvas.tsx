@@ -594,17 +594,13 @@ export function WhiteboardCanvas() {
                   fontSize: Math.max(8, Math.round((shape.fontSize ?? 18) * Math.abs(scaleY))),
                 });
               } else if ((shape.type === 'brush' || shape.type === 'arrow') && 'points' in shape) {
-                // Scale all points relative to bounding box origin
                 const pts = [...(shape as Shape & { points: number[] }).points];
-                let minX = Infinity, minY = Infinity;
-                for (let i = 0; i < pts.length; i += 2) {
-                  minX = Math.min(minX, pts[i]);
-                  minY = Math.min(minY, pts[i + 1]);
-                }
+                const nx = node.x();
+                const ny = node.y();
+                const sx = Math.abs(scaleX);
+                const sy = Math.abs(scaleY);
                 const scaledPts = pts.map((p, i) =>
-                  (i % 2 === 0)
-                    ? minX + (p - minX) * Math.abs(scaleX)
-                    : minY + (p - minY) * Math.abs(scaleY)
+                  (i % 2 === 0) ? nx + p * sx : ny + p * sy
                 );
                 store.updateShape(shapeId, { points: scaledPts } as Partial<Shape>);
               }
@@ -612,6 +608,8 @@ export function WhiteboardCanvas() {
               // Reset scale so next transform starts from 1
               node.scaleX(1);
               node.scaleY(1);
+              node.x(0);
+              node.y(0);
             }
           }}
         />

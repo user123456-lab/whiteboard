@@ -113,6 +113,15 @@ async def websocket_endpoint(
                                 "payload": {"shape": shape},
                             })
 
+            elif msg_type == "shape_updated_batch":
+                updates = payload.get("updates", [])
+                for update in updates:
+                    shape_id = update.get("shapeId")
+                    changes = update.get("changes", {})
+                    if shape_id:
+                        room.update_shape(shape_id, changes)
+                await room.broadcast(message, exclude_user_id=userId)
+
             elif msg_type == "shape_deleted":
                 shape_id = payload.get("shapeId")
                 if shape_id:

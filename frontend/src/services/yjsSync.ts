@@ -4,6 +4,9 @@ import type { Shape } from '../types';
 
 // ── Transport ──
 
+const LOCAL_ORIGIN = Symbol('local-origin');
+const UNDO_ORIGIN = Symbol('undo-origin');
+
 type SendFn = (type: string, payload: object) => void;
 let transportSend: SendFn | null = null;
 
@@ -63,7 +66,10 @@ class WhiteboardSync {
   constructor() {
     this.doc = new Y.Doc();
     this.shapes = this.doc.getArray('shapes');
-    this.undoManager = new Y.UndoManager(this.shapes, { captureTimeout: 400 });
+    this.undoManager = new Y.UndoManager(this.shapes, {
+      captureTimeout: 400,
+      trackedOrigins: new Set([LOCAL_ORIGIN]),
+    });
 
     this.shapes.observeDeep(() => {
       // Always sync Y.Doc → Zustand (never skip)
@@ -103,7 +109,7 @@ class WhiteboardSync {
   addShape(shape: Shape): void {
     this.doc.transact(() => {
       this.shapes.push([shapeToMap(shape)]);
-    });
+    }, LOCAL_ORIGIN);
   }
 
   updateShape(id: string, changes: Partial<Shape>): void {
@@ -121,7 +127,7 @@ class WhiteboardSync {
           map.set(k, v);
         }
       }
-    });
+    }, LOCAL_ORIGIN);
   }
 
   deleteShape(id: string): void {
@@ -129,7 +135,7 @@ class WhiteboardSync {
     if (idx === -1) return;
     this.doc.transact(() => {
       this.shapes.delete(idx, 1);
-    });
+    }, LOCAL_ORIGIN);
   }
 
   toggleLock(id: string): boolean {
@@ -173,7 +179,7 @@ class WhiteboardSync {
       const map = this.shapes.get(idx);
       this.shapes.delete(idx, 1);
       this.shapes.insert(Math.min(newIndex, this.shapes.length), [map]);
-    });
+    }, LOCAL_ORIGIN);
   }
 
   // ── Sweep erase ──
@@ -198,7 +204,7 @@ class WhiteboardSync {
         const idx = this.findIndex(id);
         if (idx !== -1) this.shapes.delete(idx, 1);
       }
-    });
+    }, LOCAL_ORIGIN);
   }
 
   // ── Remote apply (broadcast = no) ──
@@ -257,13 +263,16 @@ class WhiteboardSync {
 
   undo(): void {
     if (this.undoManager.undoStack.length === 0) return;
-    this.undoManager.undo();
-    // observer fires automatically, suppressBroadcast is false → auto-broadcasts
+    this.doc.transact(() => {
+      this.undoManager.undo();
+    }, UNDO_ORIGIN);
   }
 
   redo(): void {
     if (this.undoManager.redoStack.length === 0) return;
-    this.undoManager.redo();
+    this.doc.transact(() => {
+      this.undoManager.redo();
+    }, UNDO_ORIGIN);
   }
 
   // ── Group / Ungroup ──
@@ -278,7 +287,7 @@ class WhiteboardSync {
           this.shapes.get(idx).set('groupId', groupId);
         }
       }
-    });
+    }, LOCAL_ORIGIN);
     // Select the group after creating it
     useCanvasStore.getState().selectGroup(groupId);
   }
@@ -291,7 +300,7 @@ class WhiteboardSync {
           this.shapes.get(idx).set('groupId', null);
         }
       }
-    });
+    }, LOCAL_ORIGIN);
   }
 
   canUndo(): boolean { return this.undoManager.undoStack.length > 0; }
@@ -319,18 +328,27 @@ class WhiteboardSync {
     for (const s of newShapes) {
       if (!oldIds.has(s.id)) {
         broadcast('shape_created', { shape: s });
-      } else {
-        const old = oldShapes.find(o => o.id === s.id);
-        if (!old) continue;
-        const changes = this.diffShape(old, s);
-        if (Object.keys(changes).length > 0) {
-          broadcast('shape_updated', {
-            shapeId: s.id,
-            changes,
-            expectedVersion: s.version ?? 1,
-          });
-        }
       }
+    }
+
+    const updates: Array<{ shapeId: string; changes: Record<string, unknown>; expectedVersion: number }> = [];
+    for (const s of newShapes) {
+      if (!oldIds.has(s.id)) continue;
+      const old = oldShapes.find(o => o.id === s.id);
+      if (!old) continue;
+      const changes = this.diffShape(old, s);
+      if (Object.keys(changes).length === 0) continue;
+      updates.push({
+        shapeId: s.id,
+        changes,
+        expectedVersion: s.version ?? 1,
+      });
+    }
+
+    if (updates.length === 1) {
+      broadcast('shape_updated', updates[0]);
+    } else if (updates.length > 1) {
+      broadcast('shape_updated_batch', { updates });
     }
   }
 
