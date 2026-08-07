@@ -1,5 +1,6 @@
 import type Konva from 'konva';
 import type { Shape, BrushShape } from '../types';
+import { getEdgePoint } from '../types';
 import type { CanvasState } from '../store/useCanvasStore';
 
 export interface SweepResult {
@@ -98,8 +99,18 @@ export class EraserTool {
               });
             }
           }
-        } else if (shape.type === 'rectangle' || shape.type === 'circle' || shape.type === 'arrow' || shape.type === 'text') {
+        } else if (shape.type === 'rectangle' || shape.type === 'circle' || shape.type === 'arrow' || shape.type === 'text'
+            || shape.type === 'roundedRect' || shape.type === 'diamond' || shape.type === 'parallelogram'
+            || shape.type === 'cylinder' || shape.type === 'document' || shape.type === 'connector') {
           if (excludeIds.has(shape.id)) continue;
+
+          // Connector: 单线段，整条删除
+          if (shape.type === 'connector') {
+            if (!this.connectorIntersectsCircle(shape, center.x, center.y, eraserRadius, store)) continue;
+            excludeIds.add(shape.id);
+            result.shapesToDelete.push(shape.id);
+            continue;
+          }
 
           if (!this.shapeIntersectsCircle(shape, center.x, center.y, eraserRadius)) continue;
           excludeIds.add(shape.id);
@@ -134,6 +145,70 @@ export class EraserTool {
           } else if (shape.type === 'arrow') {
             const a = shape;
             segments.push([a.points[0], a.points[1], a.points[2], a.points[3]]);
+          } else if (shape.type === 'roundedRect') {
+            const r = shape as Shape & { x: number; y: number; width: number; height: number };
+            segments.push(
+              [r.x, r.y, r.x + r.width, r.y],
+              [r.x + r.width, r.y, r.x + r.width, r.y + r.height],
+              [r.x + r.width, r.y + r.height, r.x, r.y + r.height],
+              [r.x, r.y + r.height, r.x, r.y],
+            );
+          } else if (shape.type === 'diamond') {
+            const d = shape as Shape & { x: number; y: number; width: number; height: number };
+            const dcx = d.x + d.width / 2;
+            const dcy = d.y + d.height / 2;
+            segments.push(
+              [dcx, d.y, d.x + d.width, dcy],
+              [d.x + d.width, dcy, dcx, d.y + d.height],
+              [dcx, d.y + d.height, d.x, dcy],
+              [d.x, dcy, dcx, d.y],
+            );
+          } else if (shape.type === 'parallelogram') {
+            const p = shape as Shape & { x: number; y: number; width: number; height: number; skew?: number };
+            const pskew = p.skew ?? p.width * 0.2;
+            segments.push(
+              [p.x + pskew, p.y, p.x + p.width, p.y],
+              [p.x + p.width, p.y, p.x + p.width - pskew, p.y + p.height],
+              [p.x + p.width - pskew, p.y + p.height, p.x, p.y + p.height],
+              [p.x, p.y + p.height, p.x + pskew, p.y],
+            );
+          } else if (shape.type === 'cylinder') {
+            const c = shape as Shape & { x: number; y: number; width: number; height: number };
+            const arcH = Math.min(15, c.height * 0.2);
+            const ecx = c.x + c.width / 2;
+            const erx = c.width / 2;
+            const ery = arcH;
+            const N = 24;
+            // 顶部椭圆 — 可见下半弧: π → 0 逆时针（经过 π/2 底部）
+            for (let i = 0; i < N; i++) {
+              const a1 = Math.PI - (Math.PI * i) / N;
+              const a2 = Math.PI - (Math.PI * (i + 1)) / N;
+              segments.push([
+                ecx + erx * Math.cos(a1), c.y + arcH + ery * Math.sin(a1),
+                ecx + erx * Math.cos(a2), c.y + arcH + ery * Math.sin(a2),
+              ]);
+            }
+            // 右侧竖边
+            segments.push([c.x + c.width, c.y + arcH, c.x + c.width, c.y + c.height - arcH]);
+            // 底部椭圆 — 可见下半弧: 0 → π 顺时针（经过 π/2 底部）
+            for (let i = 0; i < N; i++) {
+              const a1 = (Math.PI * i) / N;
+              const a2 = (Math.PI * (i + 1)) / N;
+              segments.push([
+                ecx + erx * Math.cos(a1), c.y + c.height - arcH + ery * Math.sin(a1),
+                ecx + erx * Math.cos(a2), c.y + c.height - arcH + ery * Math.sin(a2),
+              ]);
+            }
+          } else if (shape.type === 'document') {
+            const doc = shape as Shape & { x: number; y: number; width: number; height: number; foldSize?: number };
+            const dfold = doc.foldSize ?? 20;
+            segments.push(
+              [doc.x, doc.y, doc.x + doc.width - dfold, doc.y],
+              [doc.x + doc.width - dfold, doc.y, doc.x + doc.width, doc.y + dfold],
+              [doc.x + doc.width, doc.y + dfold, doc.x + doc.width, doc.y + doc.height],
+              [doc.x + doc.width, doc.y + doc.height, doc.x, doc.y + doc.height],
+              [doc.x, doc.y + doc.height, doc.x, doc.y],
+            );
           }
 
           const remainingFragments = this.clipSegmentsToFragments(segments, center, eraserRadius);
@@ -352,6 +427,31 @@ export class EraserTool {
       case 'text': {
         return (ex - shape.x) ** 2 + (ey - shape.y) ** 2 <= (r + 30) ** 2;
       }
+      case 'roundedRect':
+      case 'cylinder':
+      case 'document': {
+        const s = shape as Shape & { x: number; y: number; width: number; height: number };
+        const cx = Math.max(s.x, Math.min(ex, s.x + s.width));
+        const cy = Math.max(s.y, Math.min(ey, s.y + s.height));
+        return (ex - cx) ** 2 + (ey - cy) ** 2 <= r * r;
+      }
+      case 'diamond': {
+        const d = shape as Shape & { x: number; y: number; width: number; height: number };
+        const dcx = d.x + d.width / 2;
+        const dcy = d.y + d.height / 2;
+        return this.polygonIntersectsCircle([
+          [dcx, d.y], [d.x + d.width, dcy],
+          [dcx, d.y + d.height], [d.x, dcy],
+        ], ex, ey, r);
+      }
+      case 'parallelogram': {
+        const p = shape as Shape & { x: number; y: number; width: number; height: number; skew?: number };
+        const pskew = p.skew ?? p.width * 0.2;
+        return this.polygonIntersectsCircle([
+          [p.x + pskew, p.y], [p.x + p.width, p.y],
+          [p.x + p.width - pskew, p.y + p.height], [p.x, p.y + p.height],
+        ], ex, ey, r);
+      }
       default:
         return false;
     }
@@ -390,7 +490,65 @@ export class EraserTool {
     return fragments;
   }
 
+  /** 检查连接线是否与橡皮擦圆相交 */
+  private connectorIntersectsCircle(
+    shape: Shape & { fromShapeId: string; toShapeId: string; fromEdge: string; toEdge: string },
+    cx: number, cy: number, r: number,
+    store: CanvasState
+  ): boolean {
+    const fromShape = store.shapes.find((s) => s.id === shape.fromShapeId);
+    const toShape = store.shapes.find((s) => s.id === shape.toShapeId);
+    if (!fromShape || !toShape) return false;
+    const from = getEdgePoint(fromShape, shape.fromEdge);
+    const to = getEdgePoint(toShape, shape.toEdge);
+    // 最近点在线段上
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return false;
+    let t = ((cx - from.x) * dx + (cy - from.y) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    const nx = from.x + t * dx;
+    const ny = from.y + t * dy;
+    return (cx - nx) ** 2 + (cy - ny) ** 2 <= r * r;
+  }
+
   private canErase(shape: Shape, userId: string): boolean {
     return shape.userId === userId || !shape.userId;
+  }
+
+  /** 检查圆与凸多边形的碰撞：圆心在内部或任一边距离 < r */
+  private polygonIntersectsCircle(
+    vertices: Array<[number, number]>,
+    cx: number, cy: number, r: number
+  ): boolean {
+    // 1. 圆心在凸多边形内部（叉积法，顶点顺时针排列）
+    let inside = true;
+    for (let i = 0; i < vertices.length; i++) {
+      const [x1, y1] = vertices[i];
+      const [x2, y2] = vertices[(i + 1) % vertices.length];
+      if ((x2 - x1) * (cy - y1) - (y2 - y1) * (cx - x1) > 0) {
+        inside = false;
+        break;
+      }
+    }
+    if (inside) return true;
+
+    // 2. 圆心到各边的最近点距离 < r
+    for (let i = 0; i < vertices.length; i++) {
+      const [x1, y1] = vertices[i];
+      const [x2, y2] = vertices[(i + 1) % vertices.length];
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq === 0) continue;
+      let t = ((cx - x1) * dx + (cy - y1) * dy) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+      const nearX = x1 + t * dx;
+      const nearY = y1 + t * dy;
+      if ((cx - nearX) ** 2 + (cy - nearY) ** 2 <= r * r) return true;
+    }
+
+    return false;
   }
 }

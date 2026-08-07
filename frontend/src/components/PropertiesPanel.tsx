@@ -10,6 +10,12 @@ import {
   Unlock,
   Trash2,
   X,
+  Diamond,
+  Database,
+  FileText,
+  RectangleHorizontal,
+  BetweenHorizontalStart,
+  Link2,
 } from 'lucide-react';
 import { useCanvasStore } from '../store/useCanvasStore';
 import type { Shape, ShapeType } from '../types';
@@ -21,6 +27,12 @@ const TYPE_ICONS: Record<ShapeType, React.ComponentType<{ className?: string }>>
   arrow: ArrowRight,
   text: Type,
   image: Image,
+  roundedRect: RectangleHorizontal,
+  diamond: Diamond,
+  parallelogram: BetweenHorizontalStart,
+  cylinder: Database,
+  document: FileText,
+  connector: Link2,
 };
 
 const TYPE_NAMES: Record<ShapeType, string> = {
@@ -30,6 +42,12 @@ const TYPE_NAMES: Record<ShapeType, string> = {
   arrow: 'Arrow',
   text: 'Text',
   image: 'Image',
+  roundedRect: 'Rounded Rect',
+  diamond: 'Diamond',
+  parallelogram: 'Parallelogram',
+  cylinder: 'Cylinder',
+  document: 'Document',
+  connector: 'Connector',
 };
 
 function updateProperty(shapeId: string, changes: Record<string, unknown>) {
@@ -163,10 +181,16 @@ export function PropertiesPanel() {
   const isOwner = shape.userId === userId;
   const TypeIcon = TYPE_ICONS[shape.type];
   const showStroke = shape.type !== 'text' && shape.type !== 'image';
-  const showFill = shape.type === 'rectangle' || shape.type === 'circle' || shape.type === 'arrow';
+  const showFill = shape.type === 'rectangle' || shape.type === 'circle' || shape.type === 'arrow'
+    || shape.type === 'roundedRect' || shape.type === 'diamond' || shape.type === 'parallelogram'
+    || shape.type === 'cylinder' || shape.type === 'document';
   const showFont = shape.type === 'text';
-  const showPos = shape.type === 'rectangle' || shape.type === 'circle' || shape.type === 'text' || shape.type === 'image';
-  const showSize = shape.type === 'rectangle' || shape.type === 'image';
+  const showPos = shape.type === 'rectangle' || shape.type === 'circle' || shape.type === 'text' || shape.type === 'image'
+    || shape.type === 'roundedRect' || shape.type === 'diamond' || shape.type === 'parallelogram'
+    || shape.type === 'cylinder' || shape.type === 'document';
+  const showSize = shape.type === 'rectangle' || shape.type === 'image'
+    || shape.type === 'roundedRect' || shape.type === 'diamond' || shape.type === 'parallelogram'
+    || shape.type === 'cylinder' || shape.type === 'document';
 
   return (
     <div className="fixed right-3 top-1/2 -translate-y-1/2 glass-panel p-3 w-[200px] z-overlay select-none space-y-0.5">

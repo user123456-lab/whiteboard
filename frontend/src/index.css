@@ -215,6 +215,14 @@ input[type="color"].color-input::-webkit-color-swatch {
   pointer-events: auto;
 }
 
+/* --- Hide scrollbar for toolbar --- */
+.toolbar-scroll::-webkit-scrollbar {
+  display: none;
+}
+.toolbar-scroll {
+  -ms-overflow-style: none;
+}
+
 /* --- Reduced Motion --- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

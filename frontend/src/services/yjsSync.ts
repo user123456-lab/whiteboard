@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import { useCanvasStore } from '../store/useCanvasStore';
-import type { Shape } from '../types';
+import type { Shape, HistoryEntry } from '../types';
 
 // ── Transport ──
 
@@ -23,6 +23,7 @@ function broadcast(type: string, payload: object): void {
 function shapeToMap(shape: Shape): Y.Map<unknown> {
   const m = new Y.Map<unknown>();
   for (const [k, v] of Object.entries(shape)) {
+    if (v === undefined) continue; // 跳过 undefined 值，防止 JSON 序列化时丢失
     if (k === 'points' && Array.isArray(v)) {
       const arr = new Y.Array<number>();
       arr.insert(0, v);
@@ -30,6 +31,10 @@ function shapeToMap(shape: Shape): Y.Map<unknown> {
     } else {
       m.set(k, v);
     }
+  }
+  // 确保可填充图形始终有 fill 值
+  if (!m.has('fill') && !['brush', 'arrow', 'connector'].includes(shape.type)) {
+    m.set('fill', 'transparent');
   }
   return m;
 }
@@ -78,8 +83,9 @@ class WhiteboardSync {
       const oldShapes = store.shapes;
       store.loadShapes(shapes);
 
-      // Broadcast only for local changes (not remote, not bootstrap)
+      // 追踪历史记录（仅本地变更）
       if (!this.suppressBroadcast) {
+        this.trackHistory(oldShapes, shapes);
         this.broadcastDiff(oldShapes, shapes);
       }
     });
@@ -349,6 +355,76 @@ class WhiteboardSync {
       broadcast('shape_updated', updates[0]);
     } else if (updates.length > 1) {
       broadcast('shape_updated_batch', { updates });
+    }
+  }
+
+  // ── History tracking ──
+
+  private trackHistory(oldShapes: Shape[], newShapes: Shape[]): void {
+    const store = useCanvasStore.getState();
+    const now = Date.now();
+    const maxEntries = 200;
+
+    const oldIds = new Set(oldShapes.map(s => s.id));
+    const newIds = new Set(newShapes.map(s => s.id));
+
+    const entries: HistoryEntry[] = [];
+
+    // 检测删除
+    for (const old of oldShapes) {
+      if (!newIds.has(old.id)) {
+        entries.push({
+          id: crypto.randomUUID(),
+          shapeId: old.id,
+          shapeType: old.type,
+          action: 'deleted',
+          userId: store.userId,
+          timestamp: now,
+          label: `Deleted ${old.type}`,
+        });
+      }
+    }
+
+    // 检测新建
+    for (const s of newShapes) {
+      if (!oldIds.has(s.id)) {
+        entries.push({
+          id: crypto.randomUUID(),
+          shapeId: s.id,
+          shapeType: s.type,
+          action: 'created',
+          userId: store.userId,
+          timestamp: now,
+          label: `Created ${s.type}`,
+        });
+      }
+    }
+
+    // 检测更新
+    for (const s of newShapes) {
+      if (!oldIds.has(s.id)) continue;
+      const old = oldShapes.find(o => o.id === s.id);
+      if (!old) continue;
+      const changes = this.diffShape(old, s);
+      if (Object.keys(changes).length > 0) {
+        entries.push({
+          id: crypto.randomUUID(),
+          shapeId: s.id,
+          shapeType: s.type,
+          action: 'updated',
+          userId: store.userId,
+          timestamp: now,
+          label: `Updated ${s.type}`,
+        });
+      }
+    }
+
+    if (entries.length > 0) {
+      const currentHistory = [...store.history, ...entries];
+      if (currentHistory.length > maxEntries) {
+        currentHistory.splice(0, currentHistory.length - maxEntries);
+      }
+      useCanvasStore.setState({ history: currentHistory });
     }
   }
 

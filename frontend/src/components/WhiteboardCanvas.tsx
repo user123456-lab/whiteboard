@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
-import { Stage, Layer, Line, Rect, Circle, Arrow, Text, Transformer, Image as KonvaImage } from 'react-konva';
+import { Stage, Layer, Line, Rect, Circle, Arrow, Text, Transformer, Image as KonvaImage, Shape as KonvaShape } from 'react-konva';
 import type Konva from 'konva';
 import { useCanvasStore } from '../store/useCanvasStore';
 import { ToolManager } from '../managers/ToolManager';
@@ -7,6 +7,7 @@ import { CursorOverlay } from './CursorOverlay';
 import { TextEditor } from './TextEditor';
 import { GridBackground } from './GridBackground';
 import type { Shape, ImageShape } from '../types';
+import { getEdgePoint } from '../types';
 
 const toolManager = new ToolManager();
 
@@ -111,6 +112,14 @@ export function WhiteboardCanvas() {
     hoveredTextIdRef.current = id;
     _setHoveredTextId(id);
   };
+  const [hoveredConnectorShapeId, _setHoveredConnectorShapeId] = useState<string | null>(null);
+  const hoveredConnectorShapeIdRef = useRef<string | null>(null);
+  const setHoveredConnectorShapeId = (id: string | null) => {
+    if (hoveredConnectorShapeIdRef.current !== id) {
+      hoveredConnectorShapeIdRef.current = id;
+      _setHoveredConnectorShapeId(id);
+    }
+  };
   const [stageSize, setStageSize] = useState({ width: window.innerWidth, height: window.innerHeight });
 
   useEffect(() => {
@@ -161,7 +170,11 @@ export function WhiteboardCanvas() {
       if (!stage) return;
       const nodes = selectedIds
         .map((id) => stage.findOne('#' + id))
-        .filter(Boolean) as Konva.Shape[];
+        .filter((n): n is Konva.Shape => {
+          if (!n) return false;
+          const s = useCanvasStore.getState().shapes.find((sh) => sh.id === n.id());
+          return s ? s.type !== 'connector' : false;
+        });
       transformerRef.current.nodes(nodes);
       transformerRef.current.getLayer()?.batchDraw();
     } else if (transformerRef.current) {
@@ -331,6 +344,157 @@ export function WhiteboardCanvas() {
             )}
           </>
         );
+      case 'roundedRect':
+        return (
+          <>
+            <Rect
+              {...common}
+              x={shape.x}
+              y={shape.y}
+              width={shape.width}
+              height={shape.height}
+              cornerRadius={shape.cornerRadius ?? 10}
+              fill={shape.fill || 'transparent'}
+            />
+            {shape.locked && (
+              <Text
+                x={shape.x - 2}
+                y={shape.y - 16}
+                text="🔒"
+                fontSize={14}
+                fill="#F59E0B"
+                listening={false}
+              />
+            )}
+          </>
+        );
+      case 'diamond': {
+        const cx = shape.x + shape.width / 2;
+        const cy = shape.y + shape.height / 2;
+        return (
+          <>
+            <Line
+              {...common}
+              points={[cx, shape.y, shape.x + shape.width, cy, cx, shape.y + shape.height, shape.x, cy]}
+              closed
+              fill={shape.fill || 'transparent'}
+            />
+            {shape.locked && (
+              <Text
+                x={shape.x - 2}
+                y={shape.y - 16}
+                text="🔒"
+                fontSize={14}
+                fill="#F59E0B"
+                listening={false}
+              />
+            )}
+          </>
+        );
+      }
+      case 'parallelogram': {
+        const skew = (shape as Shape & { skew?: number }).skew ?? shape.width * 0.2;
+        return (
+          <>
+            <Line
+              {...common}
+              points={[
+                shape.x + skew, shape.y,
+                shape.x + shape.width, shape.y,
+                shape.x + shape.width - skew, shape.y + shape.height,
+                shape.x, shape.y + shape.height,
+              ]}
+              closed
+              fill={shape.fill || 'transparent'}
+            />
+            {shape.locked && (
+              <Text
+                x={shape.x - 2}
+                y={shape.y - 16}
+                text="🔒"
+                fontSize={14}
+                fill="#F59E0B"
+                listening={false}
+              />
+            )}
+          </>
+        );
+      }
+      case 'cylinder':
+        return (
+          <>
+            <KonvaShape
+              {...common}
+              x={shape.x}
+              y={shape.y}
+              width={shape.width}
+              height={shape.height}
+              sceneFunc={(ctx, shapeKonva) => {
+                const w = shapeKonva.width();
+                const h = shapeKonva.height();
+                const arcH = Math.min(15, h * 0.2);
+                const cx = w / 2;
+                ctx.beginPath();
+                ctx.ellipse(cx, arcH, w / 2, arcH, 0, Math.PI, 0, true);
+                ctx.lineTo(w, h - arcH);
+                ctx.ellipse(cx, h - arcH, w / 2, arcH, 0, 0, Math.PI);
+                ctx.closePath();
+                ctx.fillStrokeShape(shapeKonva);
+              }}
+              fill={shape.fill || 'transparent'}
+            />
+            {shape.locked && (
+              <Text
+                x={shape.x - 2}
+                y={shape.y - 16}
+                text="🔒"
+                fontSize={14}
+                fill="#F59E0B"
+                listening={false}
+              />
+            )}
+          </>
+        );
+      case 'document': {
+        const fold = (shape as Shape & { foldSize?: number }).foldSize ?? 20;
+        return (
+          <>
+            <Line
+              {...common}
+              points={[
+                shape.x, shape.y,
+                shape.x + shape.width - fold, shape.y,
+                shape.x + shape.width, shape.y + fold,
+                shape.x + shape.width, shape.y + shape.height,
+                shape.x, shape.y + shape.height,
+              ]}
+              closed
+              fill={shape.fill || 'transparent'}
+            />
+            {/* Fold crease */}
+            <Line
+              points={[
+                shape.x + shape.width - fold, shape.y,
+                shape.x + shape.width - fold, shape.y + fold,
+                shape.x + shape.width, shape.y + fold,
+              ]}
+              stroke={shape.color}
+              strokeWidth={shape.strokeWidth * 0.7}
+              listening={false}
+            />
+            {shape.locked && (
+              <Text
+                x={shape.x - 2}
+                y={shape.y - 16}
+                text="🔒"
+                fontSize={14}
+                fill="#F59E0B"
+                listening={false}
+              />
+            )}
+          </>
+        );
+      }
       case 'circle':
         return (
           <>
@@ -422,6 +586,35 @@ export function WhiteboardCanvas() {
       }
       case 'image':
         return <ImageRenderer key={shape.id} shape={shape as ImageShape} />;
+      case 'connector': {
+        const allShapes = useCanvasStore.getState().shapes;
+        const fromShape = allShapes.find((s) => s.id === shape.fromShapeId);
+        const toShape = allShapes.find((s) => s.id === shape.toShapeId);
+        if (!fromShape || !toShape) return null;
+        const from = getEdgePoint(fromShape, shape.fromEdge);
+        const to = getEdgePoint(toShape, shape.toEdge);
+        return (
+          <>
+            <Arrow
+              {...common}
+              points={[from.x, from.y, to.x, to.y]}
+              fill={common.stroke}
+              pointerLength={10}
+              pointerWidth={8}
+            />
+            {shape.locked && (
+              <Text
+                x={from.x - 2}
+                y={from.y - 16}
+                text="🔒"
+                fontSize={14}
+                fill="#F59E0B"
+                listening={false}
+              />
+            )}
+          </>
+        );
+      }
       default:
         return null;
     }
@@ -457,6 +650,35 @@ export function WhiteboardCanvas() {
         toolManager.handleMouseDown(e);
       }}
       onMouseMove={(e) => {
+        // Connector hover tracking
+        if (activeTool === 'connector') {
+          const stage = e.target.getStage();
+          if (stage) {
+            const pos = stage.getPointerPosition();
+            if (pos) {
+              const shapeNode = stage.getIntersection(pos);
+              // 锚点 Circle 没有 id，跳过以避免清除 hover 状态导致闪烁
+              if (shapeNode) {
+                const nodeName = shapeNode.name() as string | undefined;
+                if (nodeName && nodeName.startsWith('anchor-')) {
+                  // 锚点上方不改变 hover 状态，跳过
+                } else if (shapeNode.id() && shapeNode.getType() !== 'Stage') {
+                  const s = shapes.find((sh) => sh.id === shapeNode.id());
+                  if (s && s.type !== 'connector') {
+                    setHoveredConnectorShapeId(shapeNode.id());
+                  } else {
+                    setHoveredConnectorShapeId(null);
+                  }
+                } else {
+                  setHoveredConnectorShapeId(null);
+                }
+              } else {
+                setHoveredConnectorShapeId(null);
+              }
+            }
+          }
+        }
+
         // Panning with middle mouse
         if (isPanningRef.current) {
           const dx = e.evt.clientX - panStartRef.current.x;
@@ -545,6 +767,33 @@ export function WhiteboardCanvas() {
       {/* Preview Layer */}
       <Layer ref={previewLayerRef} />
 
+      {/* Anchor Layer — connector 模式下悬停图形显示锚点（必须在 Preview 之上以接收事件） */}
+      {activeTool === 'connector' && hoveredConnectorShapeId && (() => {
+        const anchorShape = shapes.find((s) => s.id === hoveredConnectorShapeId);
+        if (!anchorShape || anchorShape.type === 'connector' || anchorShape.type === 'brush') return null;
+        const edges: Array<'top' | 'right' | 'bottom' | 'left'> = ['top', 'right', 'bottom', 'left'];
+        return (
+          <Layer listening={true}>
+            {edges.map((edge) => {
+              const pt = getEdgePoint(anchorShape, edge);
+              return (
+                <Circle
+                  key={`anchor-${anchorShape.id}-${edge}`}
+                  x={pt.x}
+                  y={pt.y}
+                  radius={5}
+                  fill="#3B82F6"
+                  stroke="#ffffff"
+                  strokeWidth={1.5}
+                  name={`anchor-${anchorShape.id}-${edge}`}
+                  listening={true}
+                />
+              );
+            })}
+          </Layer>
+        );
+      })()}
+
       {/* Cursor Layer */}
       <Layer>
         <CursorOverlay />
@@ -573,13 +822,24 @@ export function WhiteboardCanvas() {
               const scaleX = node.scaleX();
               const scaleY = node.scaleY();
 
-              if (shape.type === 'rectangle' || shape.type === 'image') {
-                store.updateShape(shapeId, {
-                  x: node.x(),
-                  y: node.y(),
-                  width: Math.max(3, node.width() * scaleX),
-                  height: Math.max(3, node.height() * scaleY),
-                });
+              if (shape.type === 'rectangle' || shape.type === 'image'
+                  || shape.type === 'roundedRect' || shape.type === 'diamond'
+                  || shape.type === 'parallelogram' || shape.type === 'cylinder'
+                  || shape.type === 'document') {
+                const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
+                const w = Math.max(3, node.width() * scaleX);
+                const h = Math.max(3, node.height() * scaleY);
+                const updates: Record<string, number> = { x: node.x(), y: node.y(), width: w, height: h };
+                if (shape.type === 'roundedRect' && shape.cornerRadius) {
+                  updates.cornerRadius = Math.max(2, Math.min(shape.cornerRadius * avgScale, Math.min(w, h) / 2));
+                }
+                if (shape.type === 'parallelogram' && shape.skew) {
+                  updates.skew = Math.max(1, Math.min(shape.skew * avgScale, w * 0.4));
+                }
+                if (shape.type === 'document' && shape.foldSize) {
+                  updates.foldSize = Math.max(2, Math.min(shape.foldSize * avgScale, Math.min(20, Math.min(w, h) * 0.3)));
+                }
+                store.updateShape(shapeId, updates as Partial<Shape>);
               } else if (shape.type === 'circle') {
                 const avgScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
                 store.updateShape(shapeId, {

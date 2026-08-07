@@ -1,5 +1,6 @@
 import type Konva from 'konva';
 import type { Shape } from '../types';
+import { getEdgePoint } from '../types';
 import { useCanvasStore, type CanvasState } from '../store/useCanvasStore';
 import { sendMessage, getWs } from '../services/websocket';
 import { whiteboardSync } from '../services/yjsSync';
@@ -10,6 +11,12 @@ import { ArrowTool } from '../tools/ArrowTool';
 import { TextTool } from '../tools/TextTool';
 import { SelectTool } from '../tools/SelectTool';
 import { EraserTool, type SweepResult } from '../tools/EraserTool';
+import { RoundedRectTool } from '../tools/RoundedRectTool';
+import { DiamondTool } from '../tools/DiamondTool';
+import { ParallelogramTool } from '../tools/ParallelogramTool';
+import { CylinderTool } from '../tools/CylinderTool';
+import { DocumentTool } from '../tools/DocumentTool';
+import { ConnectorTool } from '../tools/ConnectorTool';
 
 function offsetPoints(points: number[], dx: number, dy: number): number[] {
   const result: number[] = [];
@@ -28,6 +35,12 @@ export class ToolManager {
   private textTool = new TextTool();
   private selectTool = new SelectTool();
   private eraserTool = new EraserTool();
+  private roundedRectTool = new RoundedRectTool();
+  private diamondTool = new DiamondTool();
+  private parallelogramTool = new ParallelogramTool();
+  private cylinderTool = new CylinderTool();
+  private documentTool = new DocumentTool();
+  private connectorTool = new ConnectorTool();
 
   private isDrawing = false;
   private erasedInStroke: Set<string> = new Set();
@@ -58,7 +71,8 @@ export class ToolManager {
             if (shape.locked && shape.userId !== store.userId) return; // locked
             if (shiftKey) {
               store.toggleSelect(shapeId);
-            } else if (shape.groupId && !store.selectedIds.includes(shapeId)) {
+            } else if (shape.groupId) {
+              // 点击编组内图形始终选中整个编组
               store.selectGroup(shape.groupId);
             } else {
               store.selectOnly(shapeId);
@@ -81,6 +95,28 @@ export class ToolManager {
         this.erasedInStroke.clear();
         this.lastEraserPos = pos;
         this.tryEraseAtTarget(e.target);
+        return;
+      }
+
+      if (store.activeTool === 'connector') {
+        // 检查是否点击了锚点
+        const target = e.target;
+        if (target && target !== this.stage) {
+          const name = target.name() as string | undefined;
+          if (name && name.startsWith('anchor-')) {
+            // 解析 "anchor-{shapeId}-{edge}"
+            const lastDash = name.lastIndexOf('-');
+            const edge = name.slice(lastDash + 1) as 'top' | 'right' | 'bottom' | 'left';
+            const shapeId = name.slice('anchor-'.length, lastDash);
+            const shape = store.shapes.find((s) => s.id === shapeId);
+            if (shape && shape.type !== 'connector') {
+              store.clearSelection();
+              this.isDrawing = true;
+              const anchorPos = getEdgePoint(shape, edge);
+              this.connectorTool.startDrag(shapeId, edge, anchorPos, store, this.previewLayer!);
+            }
+          }
+        }
         return;
       }
 
@@ -133,6 +169,13 @@ export class ToolManager {
       return;
     }
 
+    if (store.activeTool === 'connector') {
+      if (this.isDrawing) {
+        this.connectorTool.onMouseMove(pos, store, this.previewLayer!);
+      }
+      return;
+    }
+
     if (!this.isDrawing) return;
     this.getActiveDrawingTool()?.onMouseMove(pos, store, this.previewLayer!);
   }
@@ -150,6 +193,26 @@ export class ToolManager {
       if (store.activeTool === 'eraser') {
         this.erasedInStroke.clear();
         this.lastEraserPos = null;
+        return;
+      }
+
+      if (store.activeTool === 'connector') {
+        if (!this.isDrawing) return;
+        this.isDrawing = false;
+        // 检查是否释放到锚点上
+        const connTarget = e.target;
+        let targetShapeId: string | null = null;
+        let targetEdge: 'top' | 'right' | 'bottom' | 'left' | null = null;
+        if (connTarget && connTarget !== this.stage) {
+          const name = connTarget.name() as string | undefined;
+          if (name && name.startsWith('anchor-')) {
+            const lastDash = name.lastIndexOf('-');
+            targetEdge = name.slice(lastDash + 1) as 'top' | 'right' | 'bottom' | 'left';
+            targetShapeId = name.slice('anchor-'.length, lastDash);
+          }
+        }
+        const shape = this.connectorTool.onMouseUp(pos, store, this.previewLayer!, targetShapeId, targetEdge);
+        if (shape) store.addShape(shape);
         return;
       }
 
@@ -277,6 +340,12 @@ export class ToolManager {
       case 'a': this.cancelAll(); store.setActiveTool('arrow'); break;
       case 't': this.cancelAll(); store.setActiveTool('text'); break;
       case 'e': this.cancelAll(); store.setActiveTool('eraser'); break;
+      case 'q': this.cancelAll(); store.setActiveTool('roundedRect'); break;
+      case 'd': this.cancelAll(); store.setActiveTool('diamond'); break;
+      case 'p': this.cancelAll(); store.setActiveTool('parallelogram'); break;
+      case 'y': this.cancelAll(); store.setActiveTool('cylinder'); break;
+      case 'f': this.cancelAll(); store.setActiveTool('document'); break;
+      case 'x': this.cancelAll(); store.setActiveTool('connector'); break;
       case 'l':
         for (const id of store.selectedIds) {
           const shape = store.shapes.find((s) => s.id === id);
@@ -308,6 +377,11 @@ export class ToolManager {
       case 'circle': return this.circleTool;
       case 'arrow': return this.arrowTool;
       case 'text': return this.textTool;
+      case 'roundedRect': return this.roundedRectTool;
+      case 'diamond': return this.diamondTool;
+      case 'parallelogram': return this.parallelogramTool;
+      case 'cylinder': return this.cylinderTool;
+      case 'document': return this.documentTool;
       default: return null;
     }
   }
@@ -369,6 +443,12 @@ export class ToolManager {
     this.circleTool.cancel();
     this.arrowTool.cancel();
     this.textTool.cancel();
+    this.roundedRectTool.cancel();
+    this.diamondTool.cancel();
+    this.parallelogramTool.cancel();
+    this.cylinderTool.cancel();
+    this.documentTool.cancel();
+    this.connectorTool.cancel();
     useCanvasStore.getState().setEditingTextId(null);
     this.selectTool.cancel();
     this.previewLayer?.destroyChildren();

@@ -23,6 +23,12 @@ import {
   AlignVerticalJustifyCenter,
   AlignVerticalJustifyEnd,
   Settings,
+  Diamond,
+  Database,
+  FileText,
+  RectangleHorizontal,
+  BetweenHorizontalStart,
+  Link2,
 } from 'lucide-react';
 import { useCanvasStore } from '../store/useCanvasStore';
 import { useUserPrefs } from '../store/useUserPrefs';
@@ -37,13 +43,19 @@ interface ToolDef {
   Icon: typeof MousePointer2;
 }
 
-const TOOLS: ToolDef[] = [
+const ALL_TOOLS: ToolDef[] = [
   { type: 'select', label: 'Select', shortcut: 'V', Icon: MousePointer2 },
   { type: 'brush', label: 'Brush', shortcut: 'B', Icon: Pencil },
   { type: 'rectangle', label: 'Rectangle', shortcut: 'R', Icon: Square },
+  { type: 'roundedRect', label: 'Rounded Rect', shortcut: 'Q', Icon: RectangleHorizontal },
+  { type: 'diamond', label: 'Diamond', shortcut: 'D', Icon: Diamond },
+  { type: 'parallelogram', label: 'Parallelogram', shortcut: 'P', Icon: BetweenHorizontalStart },
+  { type: 'cylinder', label: 'Cylinder', shortcut: 'Y', Icon: Database },
+  { type: 'document', label: 'Document', shortcut: 'F', Icon: FileText },
   { type: 'circle', label: 'Circle', shortcut: 'C', Icon: Circle },
   { type: 'arrow', label: 'Arrow', shortcut: 'A', Icon: ArrowRight },
   { type: 'text', label: 'Text', shortcut: 'T', Icon: Type },
+  { type: 'connector', label: 'Connector', shortcut: 'X', Icon: Link2 },
   { type: 'eraser', label: 'Eraser', shortcut: 'E', Icon: Eraser },
 ];
 
@@ -74,7 +86,6 @@ export function Toolbar() {
   const setToolFill = useCanvasStore((s) => s.setToolFill);
   const eraserRadius = useCanvasStore((s) => s.eraserRadius);
   const setEraserRadius = useCanvasStore((s) => s.setEraserRadius);
-  const userId = useCanvasStore((s) => s.userId);
   const stageScale = useCanvasStore((s) => s.stageScale);
   const toolFontSize = useCanvasStore((s) => s.toolFontSize);
   const setToolFontSize = useCanvasStore((s) => s.setToolFontSize);
@@ -94,8 +105,9 @@ export function Toolbar() {
     return positioned >= 2;
   }, [selectedIds, shapes]);
 
-  const showFill = activeTool === 'rectangle' || activeTool === 'circle' || activeTool === 'arrow';
-  const showProps = activeTool !== 'eraser' && activeTool !== 'text' && activeTool !== 'select';
+  const SHOW_FILL: Set<string> = new Set(['rectangle', 'circle', 'arrow', 'roundedRect', 'diamond', 'parallelogram', 'cylinder', 'document']);
+  const showFill = SHOW_FILL.has(activeTool);
+  const showProps = activeTool !== 'eraser' && activeTool !== 'text' && activeTool !== 'select' && activeTool !== 'connector';
 
   const gridLabel = useMemo(() => {
     switch (gridMode) {
@@ -126,9 +138,9 @@ export function Toolbar() {
   };
 
   return (
-    <div className="fixed left-3 top-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5 glass-panel p-1.5 z-panel select-none">
+    <div className="fixed left-3 top-3 max-h-[calc(100vh-24px)] overflow-y-auto toolbar-scroll flex flex-col items-center gap-6 glass-panel p-1.5 z-panel select-none" style={{ minWidth: 92, scrollbarWidth: 'none' }}>
       {/* ─── Drawing Tools ─── */}
-      {TOOLS.map(({ type, label, shortcut, Icon }) => (
+      {ALL_TOOLS.map(({ type, label, shortcut, Icon }) => (
         <button
           key={type}
           onClick={() => setActiveTool(type)}
@@ -143,7 +155,8 @@ export function Toolbar() {
 
       <div className="toolbar-sep" />
 
-      {/* ─── Tool Properties ─── */}
+      {/* Tool Properties — 固定高度占位，消除工具切换布局跳动 */}
+      <div style={{ minHeight: 88 }}>
       {activeTool === 'eraser' ? (
         <div className="flex flex-col items-center gap-1 py-1.5 px-0.5">
           <span className="text-[10px] text-slate-500 font-medium tracking-wide uppercase">Size</span>
@@ -180,9 +193,8 @@ export function Toolbar() {
             </button>
           </div>
         </div>
-      ) : showProps && (
+      ) : showProps ? (
         <div className="flex flex-col items-center gap-2 py-1.5 px-0.5">
-          {/* Color pickers */}
           <div className="flex items-center gap-1.5">
             <div className="flex flex-col items-center gap-0.5">
               <span className="text-[9px] text-slate-500">Stroke</span>
@@ -230,7 +242,6 @@ export function Toolbar() {
             )}
           </div>
 
-          {/* Stroke width */}
           <div className="flex items-center gap-1">
             <span className="text-[9px] text-slate-500 w-5 text-right">W</span>
             <input
@@ -246,11 +257,15 @@ export function Toolbar() {
             <span className="text-[11px] text-slate-400 tabular-nums w-5">{toolWidth}</span>
           </div>
         </div>
+      ) : (
+        /* 空占位：select/connector 工具不显示属性面板，但保持布局稳定 */
+        <div style={{ height: 88 }} />
       )}
+      </div>
 
       <div className="toolbar-sep" />
 
-      {/* ─── Undo / Redo ─── */}
+      {/* Undo / Redo */}
       <button onClick={handleUndo} title="Undo (Ctrl+Z)" className="tool-btn" aria-label="Undo">
         <Undo2 />
       </button>
@@ -260,7 +275,7 @@ export function Toolbar() {
 
       <div className="toolbar-sep" />
 
-      {/* ─── Zoom ─── */}
+      {/* Zoom */}
       <button onClick={() => zoomToCenter('in')} title="Zoom In (Ctrl+Scroll)" className="tool-btn" aria-label="Zoom in">
         <ZoomIn />
       </button>
@@ -289,7 +304,7 @@ export function Toolbar() {
 
       <div className="toolbar-sep" />
 
-      {/* ─── View Options ─── */}
+      {/* View Options */}
       <button
         onClick={() => {
           const next: Record<string, 'none' | 'dot' | 'line'> = {
@@ -319,7 +334,7 @@ export function Toolbar() {
 
       <div className="toolbar-sep" />
 
-      {/* ─── Align (multi-select only) ─── */}
+      {/* Align */}
       {showAlign && (
         <>
           <div className="flex items-center gap-0.5">
@@ -348,7 +363,7 @@ export function Toolbar() {
         </>
       )}
 
-      {/* ─── Settings ─── */}
+      {/* Settings */}
       <button
         onClick={() => useUserPrefs.getState().setShowSettings(true)}
         title="Settings"
@@ -358,7 +373,7 @@ export function Toolbar() {
         <Settings />
       </button>
 
-      {/* ─── Export ─── */}
+      {/* Export */}
       <button
         onClick={() => useCanvasStore.getState().requestExport()}
         title="Export PNG"

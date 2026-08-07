@@ -1,4 +1,4 @@
-import { Pencil, Square, Circle, ArrowRight, Type, Image } from 'lucide-react';
+import { Pencil, Square, Circle, ArrowRight, Type, Image, Diamond, Database, FileText, RectangleHorizontal, BetweenHorizontalStart, Link2 } from 'lucide-react';
 import { useCanvasStore } from '../store/useCanvasStore';
 import type { HistoryEntry, ShapeType } from '../types';
 
@@ -9,6 +9,12 @@ const typeIcons: Record<ShapeType, React.ComponentType<{ className?: string }>> 
   arrow: ArrowRight,
   text: Type,
   image: Image,
+  roundedRect: RectangleHorizontal,
+  diamond: Diamond,
+  parallelogram: BetweenHorizontalStart,
+  cylinder: Database,
+  document: FileText,
+  connector: Link2,
 };
 
 function formatTime(ts: number): string {

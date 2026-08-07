@@ -8,3 +8,4 @@ backend/data/*.json
 backend/data/*.json.tmp
 backend/data/*.json.corrupted
 .claude/
+.superpowers/
