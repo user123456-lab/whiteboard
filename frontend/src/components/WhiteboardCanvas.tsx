@@ -173,7 +173,10 @@ export function WhiteboardCanvas() {
         .filter((n): n is Konva.Shape => {
           if (!n) return false;
           const s = useCanvasStore.getState().shapes.find((sh) => sh.id === n.id());
-          return s ? s.type !== 'connector' : false;
+          if (!s) return false;
+          // 连接线和锁定图形不附加 Transformer
+          if (s.type === 'connector' || s.locked) return false;
+          return true;
         });
       transformerRef.current.nodes(nodes);
       transformerRef.current.getLayer()?.batchDraw();
@@ -434,11 +437,21 @@ export function WhiteboardCanvas() {
                 const h = shapeKonva.height();
                 const arcH = Math.min(15, h * 0.2);
                 const cx = w / 2;
+                // 1. 底面完整椭圆（柱体后方）
                 ctx.beginPath();
-                ctx.ellipse(cx, arcH, w / 2, arcH, 0, Math.PI, 0, true);
+                ctx.ellipse(cx, h - arcH, w / 2, arcH, 0, 0, Math.PI * 2);
+                ctx.fillStrokeShape(shapeKonva);
+                // 2. 柱体表面：左壁→底弧→右壁→顶弧→闭合
+                ctx.beginPath();
+                ctx.moveTo(0, arcH);
+                ctx.ellipse(cx, arcH, w / 2, arcH, 0, Math.PI, Math.PI * 2, false);
                 ctx.lineTo(w, h - arcH);
-                ctx.ellipse(cx, h - arcH, w / 2, arcH, 0, 0, Math.PI);
+                ctx.ellipse(cx, h - arcH, w / 2, arcH, 0, 0, Math.PI, false);
                 ctx.closePath();
+                ctx.fillStrokeShape(shapeKonva);
+                // 3. 顶面完整椭圆（柱体前方）
+                ctx.beginPath();
+                ctx.ellipse(cx, arcH, w / 2, arcH, 0, 0, Math.PI * 2);
                 ctx.fillStrokeShape(shapeKonva);
               }}
               fill={shape.fill || 'transparent'}
@@ -650,14 +663,13 @@ export function WhiteboardCanvas() {
         toolManager.handleMouseDown(e);
       }}
       onMouseMove={(e) => {
-        // Connector hover tracking
+        // Connector hover tracking — 精确命中 + 接近搜索
         if (activeTool === 'connector') {
           const stage = e.target.getStage();
           if (stage) {
             const pos = stage.getPointerPosition();
             if (pos) {
               const shapeNode = stage.getIntersection(pos);
-              // 锚点 Circle 没有 id，跳过以避免清除 hover 状态导致闪烁
               if (shapeNode) {
                 const nodeName = shapeNode.name() as string | undefined;
                 if (nodeName && nodeName.startsWith('anchor-')) {
@@ -673,7 +685,35 @@ export function WhiteboardCanvas() {
                   setHoveredConnectorShapeId(null);
                 }
               } else {
-                setHoveredConnectorShapeId(null);
+                // 未命中任何节点时，接近搜索（30px 半径）
+                const transform = stage.getAbsoluteTransform().copy();
+                transform.invert();
+                const canvasPos = transform.point(pos);
+                let bestDist = 30;
+                let bestId: string | null = null;
+                for (const s of shapes) {
+                  if (s.type === 'connector' || s.type === 'brush') continue;
+                  if ('x' in s && 'y' in s && 'width' in s && 'height' in s) {
+                    const cx = (s as Shape & { x: number; y: number; width: number; height: number }).x + (s as Shape & { width: number }).width / 2;
+                    const cy = (s as Shape & { y: number; height: number }).y + (s as Shape & { height: number }).height / 2;
+                    const dx = canvasPos.x - cx;
+                    const dy = canvasPos.y - cy;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < bestDist) {
+                      bestDist = dist;
+                      bestId = s.id;
+                    }
+                  } else if (s.type === 'circle' && 'x' in s && 'y' in s && 'radius' in s) {
+                    const dx = canvasPos.x - (s as Shape & { x: number }).x;
+                    const dy = canvasPos.y - (s as Shape & { y: number }).y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < bestDist + (s as Shape & { radius: number }).radius) {
+                      bestDist = dist;
+                      bestId = s.id;
+                    }
+                  }
+                }
+                setHoveredConnectorShapeId(bestId);
               }
             }
           }
@@ -767,8 +807,8 @@ export function WhiteboardCanvas() {
       {/* Preview Layer */}
       <Layer ref={previewLayerRef} />
 
-      {/* Anchor Layer — connector 模式下悬停图形显示锚点（必须在 Preview 之上以接收事件） */}
-      {activeTool === 'connector' && hoveredConnectorShapeId && (() => {
+      {/* Anchor Layer — connector 模式下悬停图形或拖拽连接线时显示锚点 */}
+      {activeTool === 'connector' && (hoveredConnectorShapeId || toolManager.isConnecting()) && (() => {
         const anchorShape = shapes.find((s) => s.id === hoveredConnectorShapeId);
         if (!anchorShape || anchorShape.type === 'connector' || anchorShape.type === 'brush') return null;
         const edges: Array<'top' | 'right' | 'bottom' | 'left'> = ['top', 'right', 'bottom', 'left'];
@@ -804,7 +844,7 @@ export function WhiteboardCanvas() {
         <Transformer
           ref={transformerRef}
           rotateEnabled={false}
-          keepRatio={false}
+          keepRatio={true}
           boundBoxFunc={(oldBox, newBox) => {
             if (newBox.width < 3 || newBox.height < 3) return oldBox;
             return newBox;
@@ -817,7 +857,7 @@ export function WhiteboardCanvas() {
             for (const node of nodes) {
               const shapeId = node.id();
               const shape = store.shapes.find((s) => s.id === shapeId);
-              if (!shape || shape.locked && shape.userId !== store.userId) continue;
+              if (!shape || shape.locked) continue;
 
               const scaleX = node.scaleX();
               const scaleY = node.scaleY();

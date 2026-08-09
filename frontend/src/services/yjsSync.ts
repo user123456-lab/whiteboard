@@ -107,7 +107,6 @@ class WhiteboardSync {
     } finally {
       this.suppressBroadcast = false;
     }
-    this.undoManager.clear();
   }
 
   // ── Local mutations (broadcast = yes) ──
@@ -269,16 +268,12 @@ class WhiteboardSync {
 
   undo(): void {
     if (this.undoManager.undoStack.length === 0) return;
-    this.doc.transact(() => {
-      this.undoManager.undo();
-    }, UNDO_ORIGIN);
+    this.undoManager.undo();
   }
 
   redo(): void {
     if (this.undoManager.redoStack.length === 0) return;
-    this.doc.transact(() => {
-      this.undoManager.redo();
-    }, UNDO_ORIGIN);
+    this.undoManager.redo();
   }
 
   // ── Group / Ungroup ──
@@ -337,7 +332,7 @@ class WhiteboardSync {
       }
     }
 
-    const updates: Array<{ shapeId: string; changes: Record<string, unknown>; expectedVersion: number }> = [];
+    const updates: Array<{ shapeId: string; changes: Record<string, unknown> }> = [];
     for (const s of newShapes) {
       if (!oldIds.has(s.id)) continue;
       const old = oldShapes.find(o => o.id === s.id);
@@ -347,7 +342,6 @@ class WhiteboardSync {
       updates.push({
         shapeId: s.id,
         changes,
-        expectedVersion: s.version ?? 1,
       });
     }
 
@@ -355,6 +349,20 @@ class WhiteboardSync {
       broadcast('shape_updated', updates[0]);
     } else if (updates.length > 1) {
       broadcast('shape_updated_batch', { updates });
+    }
+
+    // 检测图层排序变化：IDs 集合相同但顺序不同
+    if (oldShapes.length === newShapes.length && updates.length === 0) {
+      let orderChanged = false;
+      for (let i = 0; i < oldShapes.length; i++) {
+        if (oldShapes[i].id !== newShapes[i].id) {
+          orderChanged = true;
+          break;
+        }
+      }
+      if (orderChanged) {
+        broadcast('shapes_reorder', { order: newShapes.map(s => s.id) });
+      }
     }
   }
 

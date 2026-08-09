@@ -38,12 +38,13 @@ export function TextEditor({ shape, stage }: TextEditorProps) {
       }
       const store = useCanvasStore.getState();
       const text = e.target.value.trim();
-      if (text) {
+      // 仅当文本确实改变时才提交更新
+      if (text && text !== shape.text) {
         store.updateShape(shape.id, { text, fontSize: shape.fontSize ?? 18 });
       }
       store.setEditingTextId(null);
     },
-    [shape.id, shape.fontSize],
+    [shape.id, shape.fontSize, shape.text],
   );
 
   const handleKeyDown = useCallback(

@@ -39,7 +39,7 @@ export class SelectTool {
 
     for (const entry of this.draggedShapes) {
       const latest = store.shapes.find(s => s.id === entry.shape.id);
-      if (!latest || (latest.locked && latest.userId !== store.userId)) continue;
+      if (!latest || latest.locked) continue;
 
       if ('x' in latest && 'y' in latest) {
         store.updateShape(latest.id, {

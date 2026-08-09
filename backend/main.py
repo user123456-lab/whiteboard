@@ -68,7 +68,7 @@ async def websocket_endpoint(
         "timestamp": int(time.time() * 1000),
         "payload": {
             "shapes": room.shapes,
-            "users": [u.to_dict() for u in room.users.values()],
+            "users": [u.to_dict() for u in room.users.values() if u.user_id != userId],
         },
     })
 
@@ -98,20 +98,9 @@ async def websocket_endpoint(
             elif msg_type == "shape_updated":
                 shape_id = payload.get("shapeId")
                 changes = payload.get("changes", {})
-                expected_version = payload.get("expectedVersion")
                 if shape_id:
-                    success = room.update_shape(shape_id, changes, expected_version)
-                    if success:
-                        await room.broadcast(message, exclude_user_id=userId)
-                    else:
-                        shape = room.get_shape(shape_id)
-                        if shape:
-                            await websocket.send_json({
-                                "type": "shape_conflict",
-                                "userId": "server",
-                                "timestamp": int(time.time() * 1000),
-                                "payload": {"shape": shape},
-                            })
+                    room.update_shape(shape_id, changes)
+                    await room.broadcast(message, exclude_user_id=userId)
 
             elif msg_type == "shape_updated_batch":
                 updates = payload.get("updates", [])
@@ -128,6 +117,12 @@ async def websocket_endpoint(
                     room.delete_shape(shape_id)
                     await room.broadcast(message, exclude_user_id=userId)
 
+            elif msg_type == "shapes_reorder":
+                order = payload.get("order", [])
+                if isinstance(order, list):
+                    room.reorder_shapes(order)
+                    await room.broadcast(message, exclude_user_id=userId)
+
             elif msg_type == "cursor_move":
                 await room.broadcast(message, exclude_user_id=userId)
 
@@ -142,7 +137,7 @@ async def websocket_endpoint(
     except (WebSocketDisconnect, Exception):
         pass
     finally:
-        room.remove_user(userId)
+        room.remove_user(userId, websocket)
         if room.user_count == 0:
             room_manager.remove_room_if_empty(room_id)
         else:

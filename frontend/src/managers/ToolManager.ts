@@ -56,6 +56,11 @@ export class ToolManager {
     this.previewLayer = layer;
   }
 
+  /** 是否正在绘制连接线（供 WhiteboardCanvas 锚点层查询） */
+  isConnecting(): boolean {
+    return this.isDrawing && useCanvasStore.getState().activeTool === 'connector';
+  }
+
   handleMouseDown(e: Konva.KonvaEventObject<MouseEvent>): void {
     try {
       const store = useCanvasStore.getState();
@@ -68,18 +73,22 @@ export class ToolManager {
           const shapeId = target.attrs.id as string;
           const shape = store.shapes.find((s) => s.id === shapeId);
           if (shape) {
-            if (shape.locked && shape.userId !== store.userId) return; // locked
+            if (shape.locked) return;
             if (shiftKey) {
               store.toggleSelect(shapeId);
             } else if (shape.groupId) {
               // 点击编组内图形始终选中整个编组
               store.selectGroup(shape.groupId);
             } else {
-              store.selectOnly(shapeId);
+              // 如果图形已在选中列表中，保持多选状态
+              const selIds = useCanvasStore.getState().selectedIds;
+              if (!selIds.includes(shapeId)) {
+                store.selectOnly(shapeId);
+              }
             }
-            const selIds = useCanvasStore.getState().selectedIds;
+            const selIds2 = useCanvasStore.getState().selectedIds;
             this.selectTool.setDraggedShapes(
-              store.shapes.filter((s) => selIds.includes(s.id) && !(s.locked && s.userId !== store.userId))
+              store.shapes.filter((s) => selIds2.includes(s.id) && !s.locked)
             );
           }
         } else if (!shiftKey) {
@@ -199,7 +208,7 @@ export class ToolManager {
       if (store.activeTool === 'connector') {
         if (!this.isDrawing) return;
         this.isDrawing = false;
-        // 检查是否释放到锚点上
+        // 1. 先尝试精确锚点命中
         const connTarget = e.target;
         let targetShapeId: string | null = null;
         let targetEdge: 'top' | 'right' | 'bottom' | 'left' | null = null;
@@ -209,6 +218,14 @@ export class ToolManager {
             const lastDash = name.lastIndexOf('-');
             targetEdge = name.slice(lastDash + 1) as 'top' | 'right' | 'bottom' | 'left';
             targetShapeId = name.slice('anchor-'.length, lastDash);
+          }
+        }
+        // 2. 未命中锚点时执行接近搜索 (30px 吸附半径)
+        if (!targetShapeId) {
+          const snapResult = this.findClosestEdge(pos, store, 30);
+          if (snapResult) {
+            targetShapeId = snapResult.shapeId;
+            targetEdge = snapResult.edge;
           }
         }
         const shape = this.connectorTool.onMouseUp(pos, store, this.previewLayer!, targetShapeId, targetEdge);
@@ -234,6 +251,9 @@ export class ToolManager {
 
   handleKeyDown(e: KeyboardEvent): void {
     const store = useCanvasStore.getState();
+
+    // 文本编辑期间忽略所有快捷键，防止按键触发工具切换/撤销等
+    if (store.editingTextId) return;
 
     // Tool shortcuts
     if (e.ctrlKey || e.metaKey) {
@@ -309,14 +329,23 @@ export class ToolManager {
       }
       // Ctrl+] — move shape to top
       if (e.key === ']') {
+        e.preventDefault();
         const sel = store.selectedIds[0];
         if (sel) store.moveShapeTop(sel);
         return;
       }
       // Ctrl+[ — move shape to bottom
       if (e.key === '[') {
+        e.preventDefault();
         const sel = store.selectedIds[0];
         if (sel) store.moveShapeBottom(sel);
+        return;
+      }
+
+      // Ctrl+A — 全选
+      if (e.key === 'a') {
+        e.preventDefault();
+        store.selectAll();
         return;
       }
 
@@ -359,10 +388,12 @@ export class ToolManager {
         this.cancelAll();
         break;
       case ']':
+        e.preventDefault();
         const upId = store.selectedIds[0];
         if (upId) store.moveShapeUp(upId);
         break;
       case '[':
+        e.preventDefault();
         const downId = store.selectedIds[0];
         if (downId) store.moveShapeDown(downId);
         break;
@@ -433,6 +464,33 @@ export class ToolManager {
     for (const shapeId of result.shapesToDelete) {
       this.erasedInStroke.add(shapeId);
     }
+  }
+
+  /**
+   * 在给定位置附近搜索最近的图形边缘锚点（连接线吸附）
+   */
+  private findClosestEdge(
+    pos: { x: number; y: number },
+    store: CanvasState,
+    snapRadius: number,
+  ): { shapeId: string; edge: 'top' | 'right' | 'bottom' | 'left' } | null {
+    let bestDist = snapRadius;
+    let best: { shapeId: string; edge: 'top' | 'right' | 'bottom' | 'left' } | null = null;
+    const edges: Array<'top' | 'right' | 'bottom' | 'left'> = ['top', 'right', 'bottom', 'left'];
+    for (const s of store.shapes) {
+      if (s.type === 'connector' || s.type === 'brush') continue;
+      for (const edge of edges) {
+        const pt = getEdgePoint(s, edge);
+        const dx = pos.x - pt.x;
+        const dy = pos.y - pt.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = { shapeId: s.id, edge };
+        }
+      }
+    }
+    return best;
   }
 
   cancelAll(): void {

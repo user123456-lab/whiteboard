@@ -48,7 +48,11 @@ class Room:
         self.connections[user_id] = ws
         return user
 
-    def remove_user(self, user_id: str):
+    def remove_user(self, user_id: str, ws: WebSocket = None):
+        # 仅当提供的 ws 与当前存储的 ws 相同时才删除
+        # 防止旧连接的finally误删新连接的追踪
+        if ws is not None and self.connections.get(user_id) is not ws:
+            return
         self.users.pop(user_id, None)
         self.connections.pop(user_id, None)
 
@@ -59,13 +63,9 @@ class Room:
                 return
         self.shapes.append(shape)
 
-    def update_shape(self, shape_id: str, changes: dict, expected_version: int = None) -> bool:
+    def update_shape(self, shape_id: str, changes: dict):
         for shape in self.shapes:
             if shape.get("id") == shape_id:
-                if expected_version is not None:
-                    current_version = shape.get("version", 1)
-                    if expected_version != current_version:
-                        return False
                 shape.update(changes)
                 shape["version"] = shape.get("version", 1) + 1
                 return True
@@ -79,6 +79,21 @@ class Room:
 
     def delete_shape(self, shape_id: str):
         self.shapes = [s for s in self.shapes if s.get("id") != shape_id]
+
+    def reorder_shapes(self, order: list):
+        """按给定 ID 顺序重新排列 shapes 列表"""
+        lookup = {s.get("id"): s for s in self.shapes}
+        reordered = []
+        seen = set()
+        for oid in order:
+            if oid in lookup and oid not in seen:
+                reordered.append(lookup[oid])
+                seen.add(oid)
+        # 追加不在 order 中但在 shapes 里的图形（防御性）
+        for s in self.shapes:
+            if s.get("id") not in seen:
+                reordered.append(s)
+        self.shapes = reordered
 
     async def broadcast(self, message: dict, exclude_user_id: str = None):
         stale = []

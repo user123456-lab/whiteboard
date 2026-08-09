@@ -67,6 +67,7 @@ export interface CanvasState {
   toggleSelect: (id: string) => void;
   clearSelection: () => void;
   selectGroup: (groupId: string) => void;
+  selectAll: () => void;
   setActiveTool: (tool: ToolType) => void;
   setToolColor: (color: string) => void;
   setToolWidth: (width: number) => void;
@@ -174,6 +175,13 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       };
     }),
   clearSelection: () => set({ selectedIds: [] }),
+  selectAll: () =>
+    set((state) => {
+      const selectableIds = state.shapes
+        .filter((s) => s.type !== 'connector')
+        .map((s) => s.id);
+      return { selectedIds: selectableIds };
+    }),
   selectGroup: (groupId) =>
     set((state) => {
       const groupIds = state.shapes

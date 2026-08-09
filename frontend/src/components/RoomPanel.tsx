@@ -90,7 +90,7 @@ export function RoomPanel() {
           {/* Online count */}
           <div className="flex items-center gap-1 ml-auto">
             <Users className="w-3 h-3 text-slate-500" />
-            <span className="text-[11px] text-slate-400 tabular-nums">{users.length + 1}</span>
+            <span className="text-[11px] text-slate-400 tabular-nums">{users.length}</span>
           </div>
         </div>
 

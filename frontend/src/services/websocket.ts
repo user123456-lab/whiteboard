@@ -120,15 +120,13 @@ function handleMessage(msg: WSMessage): void {
     case 'cursor_move': {
       const pos = msg.payload as { x: number; y: number };
       const user = store.users.find(u => u.userId === msg.userId);
-      if (user) {
-        store.updateRemoteCursor({
-          userId: msg.userId,
-          userName: user.userName,
-          color: user.color,
-          x: pos.x,
-          y: pos.y,
-        });
-      }
+      store.updateRemoteCursor({
+        userId: msg.userId,
+        userName: user?.userName ?? msg.userId,
+        color: user?.color ?? '#999',
+        x: pos.x,
+        y: pos.y,
+      });
       break;
     }
 
@@ -158,6 +156,24 @@ function handleMessage(msg: WSMessage): void {
 
     case 'pong':
       break;
+
+    case 'shapes_reorder': {
+      const order = (msg.payload as { order: string[] }).order;
+      if (Array.isArray(order) && order.length > 0) {
+        const store2 = useCanvasStore.getState();
+        const lookup = new Map(store2.shapes.map(s => [s.id, s]));
+        const reordered = order
+          .map((oid: string) => lookup.get(oid))
+          .filter((s): s is NonNullable<typeof s> => s != null);
+        // 追加不在 order 列表中的图形
+        const inOrder = new Set(order);
+        for (const s of store2.shapes) {
+          if (!inOrder.has(s.id)) reordered.push(s);
+        }
+        store2.loadShapes(reordered);
+      }
+      break;
+    }
   }
 }
 
