@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Shape, ToolType, UserInfo, CursorPosition, HistoryEntry } from '../types';
 import { whiteboardSync } from '../services/yjsSync';
+import type { NetworkInfo } from '../services/network';
 
 export interface CanvasState {
   shapes: Shape[];
@@ -27,6 +28,7 @@ export interface CanvasState {
   history: HistoryEntry[];
   showHistory: boolean;
   exportCounter: number;
+  networkInfo: NetworkInfo | null;
   requestExport: () => void;
 
   setUserId: (id: string) => void;
@@ -86,6 +88,7 @@ export interface CanvasState {
   setClipboard: (shape: Shape | null) => void;
   setGridMode: (mode: 'none' | 'dot' | 'line') => void;
   setShowHistory: (show: boolean) => void;
+  setNetworkInfo: (info: NetworkInfo) => void;
 }
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
@@ -113,6 +116,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   history: [],
   showHistory: false,
   exportCounter: 0,
+  networkInfo: null,
 
   requestExport: () => set((s) => ({ exportCounter: s.exportCounter + 1 })),
 
@@ -242,4 +246,5 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   setClipboard: (shape) => set({ clipboard: shape }),
   setGridMode: (mode) => set({ gridMode: mode }),
   setShowHistory: (show) => set({ showHistory: show }),
+  setNetworkInfo: (info) => set({ networkInfo: info }),
 }));
