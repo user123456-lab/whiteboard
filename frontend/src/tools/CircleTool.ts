@@ -1,3 +1,4 @@
+import { generateUUID } from '../utils/uuid';
 import Konva from 'konva';
 import type { CircleShape } from '../types';
 import type { CanvasState } from '../store/useCanvasStore';
@@ -43,7 +44,7 @@ export class CircleTool {
     if (radius < 2) return null;
 
     return {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       type: 'circle',
       userId: store.userId,
       x: this.startX,

@@ -1,3 +1,4 @@
+import { generateUUID } from '../utils/uuid';
 import * as Y from 'yjs';
 import { useCanvasStore } from '../store/useCanvasStore';
 import type { Shape, HistoryEntry } from '../types';
@@ -280,7 +281,7 @@ class WhiteboardSync {
 
   groupShapes(ids: string[]): void {
     if (ids.length < 2) return;
-    const groupId = crypto.randomUUID();
+    const groupId = generateUUID();
     this.doc.transact(() => {
       for (const id of ids) {
         const idx = this.findIndex(id);
@@ -382,7 +383,7 @@ class WhiteboardSync {
     for (const old of oldShapes) {
       if (!newIds.has(old.id)) {
         entries.push({
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           shapeId: old.id,
           shapeType: old.type,
           action: 'deleted',
@@ -397,7 +398,7 @@ class WhiteboardSync {
     for (const s of newShapes) {
       if (!oldIds.has(s.id)) {
         entries.push({
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           shapeId: s.id,
           shapeType: s.type,
           action: 'created',
@@ -416,7 +417,7 @@ class WhiteboardSync {
       const changes = this.diffShape(old, s);
       if (Object.keys(changes).length > 0) {
         entries.push({
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           shapeId: s.id,
           shapeType: s.type,
           action: 'updated',

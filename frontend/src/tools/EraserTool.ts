@@ -1,3 +1,4 @@
+import { generateUUID } from '../utils/uuid';
 import type Konva from 'konva';
 import type { Shape, BrushShape } from '../types';
 import { getEdgePoint } from '../types';
@@ -91,7 +92,7 @@ export class EraserTool {
             for (let i = 1; i < fragments.length; i++) {
               result.shapesToCreate.push({
                 ...shape,
-                id: crypto.randomUUID(),
+                id: generateUUID(),
                 type: 'brush' as const,
                 points: fragments[i],
                 createdAt: Date.now(),
@@ -214,7 +215,7 @@ export class EraserTool {
           const remainingFragments = this.clipSegmentsToFragments(segments, center, eraserRadius);
           for (const frag of remainingFragments) {
             result.shapesToCreate.push({
-              id: crypto.randomUUID(),
+              id: generateUUID(),
               type: 'brush' as const,
               userId: shape.userId,
               color: shape.color,

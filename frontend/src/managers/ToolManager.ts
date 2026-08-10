@@ -1,3 +1,4 @@
+import { generateUUID } from '../utils/uuid';
 import type Konva from 'konva';
 import type { Shape } from '../types';
 import { getEdgePoint } from '../types';
@@ -273,7 +274,7 @@ export class ToolManager {
         if (store.clipboard) {
           const newShape: Shape = {
             ...structuredClone(store.clipboard),
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             createdAt: Date.now(),
             version: undefined,
           } as Shape;

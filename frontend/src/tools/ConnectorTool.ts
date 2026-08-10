@@ -1,3 +1,4 @@
+import { generateUUID } from '../utils/uuid';
 import Konva from 'konva';
 import type { ConnectorShape, ConnectorEdge } from '../types';
 import type { CanvasState } from '../store/useCanvasStore';
@@ -69,7 +70,7 @@ export class ConnectorTool {
     if (Math.sqrt(dx * dx + dy * dy) < 10) return null;
 
     return {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       type: 'connector',
       userId: store.userId,
       fromShapeId: this.fromShapeId,

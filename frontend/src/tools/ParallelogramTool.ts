@@ -1,3 +1,4 @@
+import { generateUUID } from '../utils/uuid';
 import Konva from 'konva';
 import type { ParallelogramShape } from '../types';
 import type { CanvasState } from '../store/useCanvasStore';
@@ -47,7 +48,7 @@ export class ParallelogramTool {
     if (width < 3 && height < 3) return null;
 
     return {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       type: 'parallelogram',
       userId: store.userId,
       x: Math.min(this.startX, pos.x),

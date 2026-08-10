@@ -1,3 +1,4 @@
+import { generateUUID } from '../utils/uuid';
 import Konva from 'konva';
 import type { BrushShape } from '../types';
 import type { CanvasState } from '../store/useCanvasStore';
@@ -13,7 +14,7 @@ export class BrushTool {
     this.points = [pos.x, pos.y];
     // 立即创建图形到 store，实现实时同步
     const shape: BrushShape = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       type: 'brush',
       userId: store.userId,
       points: [pos.x, pos.y],

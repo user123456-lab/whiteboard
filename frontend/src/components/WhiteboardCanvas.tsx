@@ -1,3 +1,4 @@
+import { generateUUID } from '../utils/uuid';
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { Stage, Layer, Line, Rect, Circle, Arrow, Text, Transformer, Image as KonvaImage, Shape as KonvaShape } from 'react-konva';
 import type Konva from 'konva';
@@ -213,7 +214,7 @@ export function WhiteboardCanvas() {
           const pos = transform.point(center);
           const store = useCanvasStore.getState();
           const newShape: ImageShape = {
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             type: 'image',
             userId: store.userId,
             x: pos.x - w / 2,
@@ -266,7 +267,7 @@ export function WhiteboardCanvas() {
               const pos = transform.point(center);
               const store = useCanvasStore.getState();
               const newShape: ImageShape = {
-                id: crypto.randomUUID(),
+                id: generateUUID(),
                 type: 'image',
                 userId: store.userId,
                 x: pos.x - w / 2,

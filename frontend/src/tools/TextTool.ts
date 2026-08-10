@@ -1,3 +1,4 @@
+import { generateUUID } from '../utils/uuid';
 import type Konva from 'konva';
 import type { TextShape } from '../types';
 import type { CanvasState } from '../store/useCanvasStore';
@@ -21,7 +22,7 @@ export class TextTool {
 
   createText(x: number, y: number, text: string, store: CanvasState): TextShape {
     return {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       type: 'text',
       userId: store.userId,
       x,

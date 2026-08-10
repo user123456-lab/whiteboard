@@ -1,3 +1,4 @@
+import { generateUUID } from '../utils/uuid';
 import Konva from 'konva';
 import type { ArrowShape } from '../types';
 import type { CanvasState } from '../store/useCanvasStore';
@@ -43,7 +44,7 @@ export class ArrowTool {
     if (Math.sqrt(dx * dx + dy * dy) < 5) return null;
 
     return {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       type: 'arrow',
       userId: store.userId,
       points: [this.startX, this.startY, pos.x, pos.y],
