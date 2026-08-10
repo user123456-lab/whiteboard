@@ -4,8 +4,11 @@ import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from room_manager import RoomManager
+from api.network import router as network_router
 
 app = FastAPI(title="Whiteboard Backend")
+
+app.include_router(network_router)
 
 app.add_middleware(
     CORSMiddleware,
