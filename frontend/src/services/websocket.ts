@@ -26,7 +26,8 @@ export function connect(roomId: string, userId: string, userName: string): WebSo
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.hostname;
-  const url = `${protocol}//${host}:8000/ws/${roomId}?userId=${userId}&userName=${encodeURIComponent(userName)}`;
+  const port = import.meta.env.VITE_BACKEND_PORT || '8000';
+  const url = `${protocol}//${host}:${port}/ws/${roomId}?userId=${userId}&userName=${encodeURIComponent(userName)}`;
 
   const ws = new WebSocket(url);
   wsInstance = ws;
