@@ -359,6 +359,27 @@ async def test_v2_batch_update():
     await ws_b.close()
 
 
+async def test_network_endpoint():
+    """Test GET /api/network returns correct format"""
+    print("\n── Network Endpoint ──")
+
+    import urllib.request
+
+    try:
+        resp = urllib.request.urlopen("http://localhost:8000/api/network", timeout=5)
+        data = json.loads(resp.read())
+        required_keys = {"lanIp", "port", "frontendPort"}
+        if required_keys.issubset(data.keys()):
+            if isinstance(data["port"], int) and isinstance(data["frontendPort"], int):
+                ok(f"network endpoint returns valid data: {data['lanIp']}:{data['port']}")
+            else:
+                fail("network: port types", str(data))
+        else:
+            fail("network: missing keys", str(data))
+    except Exception as e:
+        fail("network endpoint", str(e))
+
+
 async def main():
     global passed, failed
     print("Whiteboard E2E Protocol Test")
@@ -371,6 +392,7 @@ async def main():
         (test_v2_flow_shapes, "v2.0 Flow Shapes"),
         (test_v2_connector, "v2.0 Connector"),
         (test_v2_batch_update, "v2.0 Batch Update"),
+        (test_network_endpoint, "Network Endpoint"),
     ]:
         try:
             await test_fn()
