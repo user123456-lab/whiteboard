@@ -39,8 +39,9 @@ function App() {
       .then((info) => {
         useCanvasStore.getState().setNetworkInfo(info);
       })
-      .catch(() => {
+      .catch((err) => {
         // 网络信息获取失败，不显示 IP（功能降级）
+        console.warn('[LAN] 获取网络信息失败，LAN 地址将不显示:', err);
       });
   }, []);
 
