@@ -23,7 +23,13 @@ function App() {
     // sessionStorage = per-tab unique (multi-window testing)
     let storedId = sessionStorage.getItem('wb-userid');
     if (!storedId) {
-      storedId = crypto.randomUUID();
+      // crypto.randomUUID() 仅在安全上下文可用（localhost/HTTPS），HTTP局域网需回退
+      storedId = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+            const r = Math.random() * 16 | 0;
+            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+          });
       sessionStorage.setItem('wb-userid', storedId);
     }
     setUserId(storedId);
