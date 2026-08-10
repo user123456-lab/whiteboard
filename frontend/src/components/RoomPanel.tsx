@@ -21,6 +21,7 @@ export function RoomPanel() {
   const wsConnected = useCanvasStore((s) => s.wsConnected);
   const wsReconnecting = useCanvasStore((s) => s.wsReconnecting);
   const users = useCanvasStore((s) => s.users);
+  const networkInfo = useCanvasStore((s) => s.networkInfo);
 
   const [joinInput, setJoinInput] = useState('');
   const [nameInput, setNameInput] = useState(() => {
@@ -102,6 +103,25 @@ export function RoomPanel() {
               <span className="text-xs text-slate-200 font-mono font-medium">{roomId}</span>
             </div>
 
+            {/* 局域网地址 */}
+            {networkInfo && (
+              <div className="flex items-center gap-1.5 mb-2 px-2 py-1.5 rounded bg-white/5">
+                <span className="text-[10px] text-slate-500 flex-shrink-0">LAN</span>
+                <code className="text-[10px] text-slate-400 font-mono truncate">
+                  http://{networkInfo.lanIp}:{networkInfo.frontendPort}
+                </code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(`http://${networkInfo.lanIp}:${networkInfo.frontendPort}`)
+                      .catch(() => {});
+                  }}
+                  className="p-0.5 rounded hover:bg-white/10 transition-colors cursor-pointer flex-shrink-0"
+                >
+                  <Copy className="w-2.5 h-2.5 text-slate-500" />
+                </button>
+              </div>
+            )}
+
             <UserList />
 
             <div className="flex gap-1.5 mt-3">
@@ -141,6 +161,26 @@ export function RoomPanel() {
         <h1 className="text-lg font-semibold text-slate-100 mb-5 text-center tracking-tight">
           Collaborative Whiteboard
         </h1>
+
+        {/* 局域网地址提示 */}
+        {networkInfo && (
+          <div className="flex items-center gap-1.5 mb-4 px-3 py-2 rounded-lg bg-white/5 border border-white/5">
+            <span className="text-[10px] text-slate-500 uppercase tracking-wider flex-shrink-0">LAN</span>
+            <code className="text-[11px] text-slate-300 font-mono flex-1 truncate">
+              http://{networkInfo.lanIp}:{networkInfo.frontendPort}
+            </code>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(`http://${networkInfo.lanIp}:${networkInfo.frontendPort}`)
+                  .catch(() => {});
+              }}
+              className="p-1 rounded hover:bg-white/10 transition-colors cursor-pointer flex-shrink-0"
+              title="复制局域网地址"
+            >
+              <Copy className="w-3 h-3 text-slate-400" />
+            </button>
+          </div>
+        )}
 
         <div className="mb-4">
           <label className="block text-[11px] text-slate-500 mb-1.5 font-medium tracking-wide uppercase">
