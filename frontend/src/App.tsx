@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { fetchNetworkInfo } from './services/network';
 import { useCanvasStore } from './store/useCanvasStore';
 import { useUserPrefs } from './store/useUserPrefs';
 import { WhiteboardCanvas } from './components/WhiteboardCanvas';
@@ -32,6 +33,16 @@ function App() {
       setUserName(storedName);
     }
   }, [setUserId, setUserName]);
+
+  useEffect(() => {
+    fetchNetworkInfo()
+      .then((info) => {
+        useCanvasStore.getState().setNetworkInfo(info);
+      })
+      .catch(() => {
+        // 网络信息获取失败，不显示 IP（功能降级）
+      });
+  }, []);
 
   return (
     <div className="w-screen h-screen overflow-hidden" style={{ background: canvasBg }}>
