@@ -15,7 +15,6 @@
     "react-dom": "^18.2.0",
     "react-konva": "^18.2.10",
     "uuid": "^9.0.0",
-    "yjs": "^13.6.30",
     "zustand": "^4.4.7"
   },
   "devDependencies": {

@@ -1,7 +1,25 @@
 import { create } from 'zustand';
 import type { Shape, ToolType, UserInfo, CursorPosition, HistoryEntry } from '../types';
-import { whiteboardSync } from '../services/yjsSync';
+import { sendMessage, getWs } from '../services/websocket';
 import type { NetworkInfo } from '../services/network';
+
+// ── Undo/Redo 操作栈 ──
+
+interface UndoEntry {
+  undo: () => void;
+  redo: () => void;
+}
+
+let _undoStack: UndoEntry[] = [];
+let _redoStack: UndoEntry[] = [];
+let _undoRedoing = false;
+
+function pushUndo(entry: UndoEntry): void {
+  if (_undoRedoing) return;
+  _undoStack.push(entry);
+  if (_undoStack.length > 200) _undoStack.shift();
+  _redoStack = [];
+}
 
 export interface CanvasState {
   shapes: Shape[];
@@ -37,7 +55,6 @@ export interface CanvasState {
   setWsConnected: (connected: boolean) => void;
   setWsReconnecting: (reconnecting: boolean) => void;
 
-  // Shape CRUD — delegates to Yjs whiteboardSync
   addShape: (shape: Shape) => void;
   updateShape: (id: string, data: Partial<Shape>) => void;
   deleteShape: (id: string) => void;
@@ -52,17 +69,13 @@ export interface CanvasState {
   moveShapeTop: (shapeId: string) => void;
   moveShapeBottom: (shapeId: string) => void;
 
-  // Undo / Redo — global (CRDT-based)
   undo: () => void;
   redo: () => void;
 
-  // Remote ingest — delegates to whiteboardSync
   remoteCreateShape: (shape: Shape) => void;
   remoteUpdateShape: (id: string, data: Partial<Shape>) => void;
   remoteDeleteShape: (id: string) => void;
-
-  // Bootstrap
-  bootstrapYjs: (shapes: Shape[], force?: boolean) => void;
+  bootstrapShapes: (shapes: Shape[]) => void;
 
   setSelectedId: (id: string | null) => void;
   selectOnly: (id: string) => void;
@@ -120,53 +133,221 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   requestExport: () => set((s) => ({ exportCounter: s.exportCounter + 1 })),
 
-  // ── Identity ──
   setUserId: (id) => set({ userId: id }),
   setUserName: (name) => set({ userName: name }),
   setRoomId: (id) => set({ roomId: id }),
   setWsConnected: (connected) => set({ wsConnected: connected }),
   setWsReconnecting: (reconnecting) => set({ wsReconnecting: reconnecting }),
 
-  // ── Shape CRUD (→ Yjs) ──
+  // ── Shape CRUD（直接操作 Zustand + 发送 WebSocket）──
+
   addShape: (shape) => {
-    whiteboardSync.addShape(shape);
+    set((s) => ({ shapes: [...s.shapes, shape] }));
+    const store = get();
+    pushUndo({
+      undo: () => store.deleteShape(shape.id),
+      redo: () => {
+        _undoRedoing = true;
+        store.addShape(shape);
+        _undoRedoing = false;
+      },
+    });
+    sendMessage(getWs(), 'shape_created', { shape }, store.userId);
   },
 
   updateShape: (id, data) => {
-    whiteboardSync.updateShape(id, data);
+    let prev: Partial<Shape> | null = null;
+    let oldVersion: number | undefined;
+    set((s) => {
+      const old = s.shapes.find((sh) => sh.id === id);
+      if (old) {
+        prev = {};
+        oldVersion = old.version;
+        for (const k of Object.keys(data)) {
+          (prev as Record<string, unknown>)[k] = (old as unknown as Record<string, unknown>)[k];
+        }
+      }
+      return {
+        shapes: s.shapes.map((sh) =>
+          sh.id === id ? { ...sh, ...data, version: (sh.version ?? 1) + 1 } as Shape : sh,
+        ),
+      };
+    });
+    const store = get();
+    if (prev) {
+      const prevData = prev;
+      pushUndo({
+        undo: () => store.updateShape(id, prevData),
+        redo: () => store.updateShape(id, data),
+      });
+    }
+    sendMessage(
+      getWs(), 'shape_updated',
+      { shapeId: id, changes: data, expectedVersion: oldVersion },
+      store.userId,
+    );
   },
 
   deleteShape: (id) => {
-    whiteboardSync.deleteShape(id);
+    let shape: Shape | null = null;
+    set((s) => {
+      shape = s.shapes.find((sh) => sh.id === id) ?? null;
+      return { shapes: s.shapes.filter((sh) => sh.id !== id) };
+    });
+    const store = get();
+    if (shape) {
+      const capturedShape = shape;
+      pushUndo({
+        undo: () => {
+          _undoRedoing = true;
+          store.addShape(capturedShape);
+          _undoRedoing = false;
+        },
+        redo: () => store.deleteShape(id),
+      });
+    }
+    sendMessage(getWs(), 'shape_deleted', { shapeId: id }, store.userId);
   },
 
   toggleLock: (shapeId) => {
-    return whiteboardSync.toggleLock(shapeId);
+    const shape = get().shapes.find((s) => s.id === shapeId);
+    if (!shape) return false;
+    const newLocked = !shape.locked;
+    get().updateShape(shapeId, { locked: newLocked } as Partial<Shape>);
+    return newLocked;
   },
 
   batchApplySweepResult: (result) => {
-    whiteboardSync.batchApply(result);
+    _undoRedoing = true;
+    set((s) => {
+      let shapes = [...s.shapes];
+      for (const { shapeId, points } of result.shapesToUpdate) {
+        shapes = shapes.map((sh) =>
+          sh.id === shapeId ? { ...sh, points } : sh,
+        );
+      }
+      for (const shape of result.shapesToCreate) {
+        shapes = [...shapes, shape];
+      }
+      const deleteSet = new Set(result.shapesToDelete);
+      shapes = shapes.filter((sh) => !deleteSet.has(sh.id));
+      return { shapes };
+    });
+    _undoRedoing = false;
+    const store = get();
+    if (result.shapesToUpdate.length > 0) {
+      sendMessage(getWs(), 'shape_updated_batch', {
+        updates: result.shapesToUpdate.map((u) => ({
+          shapeId: u.shapeId,
+          changes: { points: u.points },
+        })),
+      }, store.userId);
+    }
+    for (const shape of result.shapesToCreate) {
+      sendMessage(getWs(), 'shape_created', { shape }, store.userId);
+    }
+    for (const id of result.shapesToDelete) {
+      sendMessage(getWs(), 'shape_deleted', { shapeId: id }, store.userId);
+    }
   },
 
-  // ── Z-order (→ Yjs Y.Array) ──
-  moveShapeUp: (shapeId) => whiteboardSync.moveShapeUp(shapeId),
-  moveShapeDown: (shapeId) => whiteboardSync.moveShapeDown(shapeId),
-  moveShapeTop: (shapeId) => whiteboardSync.moveShapeTop(shapeId),
-  moveShapeBottom: (shapeId) => whiteboardSync.moveShapeBottom(shapeId),
+  // ── 图层排序 ──
 
-  // ── Undo / Redo (global) ──
-  undo: () => whiteboardSync.undo(),
-  redo: () => whiteboardSync.redo(),
+  moveShapeUp: (shapeId) => {
+    set((s) => {
+      const idx = s.shapes.findIndex((sh) => sh.id === shapeId);
+      if (idx === -1 || idx >= s.shapes.length - 1) return s;
+      const newShapes = [...s.shapes];
+      [newShapes[idx], newShapes[idx + 1]] = [newShapes[idx + 1], newShapes[idx]];
+      return { shapes: newShapes };
+    });
+    const order = get().shapes.map((s) => s.id);
+    sendMessage(getWs(), 'shapes_reorder', { order }, get().userId);
+  },
 
-  // ── Remote ingest (→ Yjs) ──
-  remoteCreateShape: (shape) => whiteboardSync.applyRemoteCreate(shape),
-  remoteUpdateShape: (id, data) => whiteboardSync.applyRemoteUpdate(id, data),
-  remoteDeleteShape: (id) => whiteboardSync.applyRemoteDelete(id),
+  moveShapeDown: (shapeId) => {
+    set((s) => {
+      const idx = s.shapes.findIndex((sh) => sh.id === shapeId);
+      if (idx <= 0) return s;
+      const newShapes = [...s.shapes];
+      [newShapes[idx], newShapes[idx - 1]] = [newShapes[idx - 1], newShapes[idx]];
+      return { shapes: newShapes };
+    });
+    const order = get().shapes.map((s) => s.id);
+    sendMessage(getWs(), 'shapes_reorder', { order }, get().userId);
+  },
 
-  // ── Bootstrap ──
-  bootstrapYjs: (shapes, force) => whiteboardSync.bootstrap(shapes, force),
+  moveShapeTop: (shapeId) => {
+    set((s) => {
+      const idx = s.shapes.findIndex((sh) => sh.id === shapeId);
+      if (idx === -1 || idx >= s.shapes.length - 1) return s;
+      const newShapes = s.shapes.filter((sh) => sh.id !== shapeId);
+      newShapes.push(s.shapes[idx]);
+      return { shapes: newShapes };
+    });
+    const order = get().shapes.map((s) => s.id);
+    sendMessage(getWs(), 'shapes_reorder', { order }, get().userId);
+  },
 
-  // ── Local state ──
+  moveShapeBottom: (shapeId) => {
+    set((s) => {
+      const idx = s.shapes.findIndex((sh) => sh.id === shapeId);
+      if (idx <= 0) return s;
+      const newShapes = s.shapes.filter((sh) => sh.id !== shapeId);
+      newShapes.unshift(s.shapes[idx]);
+      return { shapes: newShapes };
+    });
+    const order = get().shapes.map((s) => s.id);
+    sendMessage(getWs(), 'shapes_reorder', { order }, get().userId);
+  },
+
+  // ── Undo / Redo（自维护操作栈）──
+
+  undo: () => {
+    if (_undoStack.length === 0) return;
+    _undoRedoing = true;
+    const entry = _undoStack.pop()!;
+    entry.undo();
+    _redoStack.push(entry);
+    _undoRedoing = false;
+  },
+
+  redo: () => {
+    if (_redoStack.length === 0) return;
+    _undoRedoing = true;
+    const entry = _redoStack.pop()!;
+    entry.redo();
+    _undoStack.push(entry);
+    _undoRedoing = false;
+  },
+
+  // ── 远程消息处理（不触发 undo 栈，不重复广播）──
+
+  remoteCreateShape: (shape) => {
+    set((s) => {
+      if (s.shapes.find((sh) => sh.id === shape.id)) return s;
+      return { shapes: [...s.shapes, shape] as Shape[] };
+    });
+  },
+
+  remoteUpdateShape: (id, data) => {
+    set((s) => ({
+      shapes: s.shapes.map((sh) =>
+        sh.id === id ? { ...sh, ...data } as Shape : sh,
+      ),
+    }));
+  },
+
+  remoteDeleteShape: (id) => {
+    set((s) => ({ shapes: s.shapes.filter((sh) => sh.id !== id) }));
+  },
+
+  bootstrapShapes: (shapes) => {
+    set({ shapes });
+  },
+
+  // ── 选择 ──
+
   setSelectedId: (id) => set({ selectedIds: id ? [id] : [] }),
   selectOnly: (id) => set({ selectedIds: [id] }),
   toggleSelect: (id) =>
@@ -201,7 +382,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   setEditingTextId: (id) => set({ editingTextId: id }),
   setEraserRadius: (radius) => set({ eraserRadius: radius }),
 
-  // ── Users & cursors ──
+  // ── 用户与光标 ──
+
   setUsers: (users) => set({ users }),
   addUser: (user) =>
     set((state) => {
@@ -235,14 +417,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       return { shapes, selectedIds };
     }),
 
-  // ── Viewport ──
   setStageScale: (scale) => {
     if (!Number.isFinite(scale)) return;
     set({ stageScale: Math.max(0.1, Math.min(5, scale)) });
   },
   setStagePosition: (x, y) => set({ stageX: x, stageY: y }),
 
-  // ── Misc ──
   setClipboard: (shape) => set({ clipboard: shape }),
   setGridMode: (mode) => set({ gridMode: mode }),
   setShowHistory: (show) => set({ showHistory: show }),

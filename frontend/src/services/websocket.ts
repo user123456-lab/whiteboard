@@ -1,6 +1,5 @@
 import type { WSMessage } from '../types';
 import { useCanvasStore } from '../store/useCanvasStore';
-import { setSyncTransport } from './yjsSync';
 
 let wsInstance: WebSocket | null = null;
 let throttleTimer = 0;
@@ -36,11 +35,6 @@ export function connect(roomId: string, userId: string, userName: string): WebSo
     useCanvasStore.getState().setWsConnected(true);
     useCanvasStore.getState().setWsReconnecting(false);
     reconnectAttempts = 0;
-
-    // Wire up Yjs sync transport (avoids circular import)
-    setSyncTransport((type, payload) => {
-      sendMessage(ws, type, payload, useCanvasStore.getState().userId);
-    });
   };
 
   ws.onmessage = (event) => {
@@ -145,9 +139,8 @@ function handleMessage(msg: WSMessage): void {
 
     case 'room_state': {
       const payload = msg.payload as { shapes: never[]; users: never[] };
-      // Bootstrap Yjs document from server state
-      store.bootstrapYjs(payload.shapes, true);
-      store.setUsers(payload.users);
+      store.bootstrapShapes(payload.shapes as never);
+      store.setUsers(payload.users as never);
       break;
     }
 

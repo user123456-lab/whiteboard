@@ -4,7 +4,6 @@ import type { Shape } from '../types';
 import { getEdgePoint } from '../types';
 import { useCanvasStore, type CanvasState } from '../store/useCanvasStore';
 import { sendMessage, getWs } from '../services/websocket';
-import { whiteboardSync } from '../services/yjsSync';
 import { BrushTool } from '../tools/BrushTool';
 import { RectangleTool } from '../tools/RectangleTool';
 import { CircleTool } from '../tools/CircleTool';
@@ -315,7 +314,11 @@ export class ToolManager {
       if (e.key === 'g') {
         e.preventDefault();
         if (store.selectedIds.length >= 2) {
-          whiteboardSync.groupShapes(store.selectedIds);
+          const groupId = generateUUID();
+          for (const id of store.selectedIds) {
+            store.updateShape(id, { groupId } as Partial<Shape>);
+          }
+          store.selectGroup(groupId);
         }
         return;
       }
@@ -323,7 +326,9 @@ export class ToolManager {
       if (e.key === 'G') {
         e.preventDefault();
         if (store.selectedIds.length > 0) {
-          whiteboardSync.ungroupShapes(store.selectedIds);
+          for (const id of store.selectedIds) {
+            store.updateShape(id, { groupId: undefined } as unknown as Partial<Shape>);
+          }
           store.clearSelection();
         }
         return;

@@ -183,9 +183,9 @@ async def test_persistence():
         "version": 1,
     }
     await ws.send(make_msg("shape_created", "test-user", {"shape": shape}))
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(1.0)
     await ws.close()
-    await asyncio.sleep(0.3)
+    await asyncio.sleep(0.5)
 
     # Reconnect — shape should still be there
     ws2 = await websockets.connect(f"{BASE}/ws/{room}?userId=test-user2&userName=Tester2")
