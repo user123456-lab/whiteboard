@@ -2,7 +2,8 @@
 setlocal enabledelayedexpansion
 
 set PROJECT_ROOT=D:\Projects\whiteboard
-set NGINX_PATH=%PROJECT_ROOT%\tools\nginx\nginx.exe
+set NGINX_HOME=%PROJECT_ROOT%\tools\nginx
+set NGINX_PATH=%NGINX_HOME%\nginx.exe
 set NGINX_CONF=%PROJECT_ROOT%\nginx.conf
 
 echo.
@@ -61,7 +62,7 @@ if !errorlevel! equ 0 (
     echo Nginx is running, hot reloading...
     "%NGINX_PATH%" -s reload
 ) else (
-    "%NGINX_PATH%" -c "%NGINX_CONF%"
+    "%NGINX_PATH%" -p "%NGINX_HOME%" -c "%NGINX_CONF%"
 )
 
 if !errorlevel! neq 0 (
