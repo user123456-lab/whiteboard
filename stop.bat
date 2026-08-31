@@ -2,7 +2,8 @@
 chcp 65001 >nul
 setlocal enabledelayedexpansion
 
-set NGINX_PATH=C:\nginx\nginx.exe
+set PROJECT_ROOT=D:\Projects\whiteboard
+set NGINX_PATH=%PROJECT_ROOT%\tools\nginx\nginx.exe
 
 echo 正在停止 Whiteboard...
 

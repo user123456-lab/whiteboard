@@ -3,7 +3,7 @@ chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 set PROJECT_ROOT=D:\Projects\whiteboard
-set NGINX_PATH=C:\nginx\nginx.exe
+set NGINX_PATH=%PROJECT_ROOT%\tools\nginx\nginx.exe
 set NGINX_CONF=%PROJECT_ROOT%\nginx.conf
 
 echo.
@@ -50,7 +50,8 @@ REM --- 3. 启动或重载 Nginx ---
 echo [3/3] 启动 Nginx...
 if not exist "%NGINX_PATH%" (
     echo [错误] 未找到 Nginx: %NGINX_PATH%
-    echo        请从 https://nginx.org/en/download.html 下载并解压到 C:\nginx\
+    echo        从 https://nginx.org/en/download.html 下载
+    echo        解压后放到 %PROJECT_ROOT%\tools\nginx\
     pause
     exit /b 1
 )
