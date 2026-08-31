@@ -76,6 +76,7 @@ async def init_db():
                 version      INT          DEFAULT 1,
                 sort_order   INT          NOT NULL DEFAULT 0,
                 geometry     JSON         NOT NULL,
+                changed_fields JSON       DEFAULT NULL,
                 created_at   BIGINT       NOT NULL,
                 updated_at   BIGINT       NOT NULL,
                 INDEX idx_room (room_id),
@@ -84,7 +85,16 @@ async def init_db():
                     REFERENCES rooms(id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """))
-    print("[DB] 连接池已初始化，表结构已就绪")
+
+    # 迁移：为已有数据库添加 changed_fields 列
+    async with engine.begin() as conn:
+        try:
+            await conn.execute(text(
+                "ALTER TABLE shapes ADD COLUMN changed_fields JSON DEFAULT NULL"
+            ))
+            print("[DB] migration: shapes.changed_fields added")
+        except Exception:
+            pass
 
 
 async def close_db():
@@ -113,6 +123,9 @@ def _shape_to_row(shape: dict, room_id: str, sort_order: int, now: int) -> dict:
         if key in shape:
             geometry[key] = shape[key]
 
+    # 提取本次变更涉及的字段列表（用于属性级冲突检测）
+    changed_fields = [k for k in shape.keys() if k in _GEOMETRY_FIELDS and k in shape]
+
     return {
         'id': shape.get('id'),
         'room_id': room_id,
@@ -126,6 +139,7 @@ def _shape_to_row(shape: dict, room_id: str, sort_order: int, now: int) -> dict:
         'version': shape.get('version', 1),
         'sort_order': sort_order,
         'geometry': json.dumps(geometry, ensure_ascii=False),
+        'changed_fields': json.dumps(changed_fields, ensure_ascii=False) if changed_fields else None,
         'created_at': shape.get('createdAt', now),
         'updated_at': now,
     }
@@ -144,6 +158,7 @@ def _row_to_shape(row) -> dict:
         'strokeWidth': d['stroke_width'],
         'createdAt': d['created_at'],
         'version': d['version'],
+        'changedFields': d.get('changed_fields'),
     }
     if d.get('fill') and d['fill'] != 'transparent':
         shape['fill'] = d['fill']

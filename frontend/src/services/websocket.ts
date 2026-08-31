@@ -154,9 +154,14 @@ function handleMessage(msg: WSMessage): void {
       break;
     }
 
-    case 'shape_conflict':
-      // Yjs CRDT resolves conflicts — no action needed
+    case 'shape_conflict': {
+      // 服务端版本更新，用权威数据覆盖本地（败方看到正确状态）
+      const serverShape = (msg.payload as { shape?: Record<string, unknown> })?.shape;
+      if (serverShape && serverShape.id) {
+        store.remoteUpdateShape(serverShape.id as string, serverShape);
+      }
       break;
+    }
 
     case 'pong':
       break;

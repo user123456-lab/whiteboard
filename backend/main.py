@@ -146,9 +146,11 @@ async def websocket_endpoint(
                     await session.execute(
                         text("""
                             INSERT INTO shapes (id, room_id, user_id, type, color, stroke_width, fill,
-                                locked, group_id, version, sort_order, geometry, created_at, updated_at)
+                                locked, group_id, version, sort_order, geometry, changed_fields,
+                                created_at, updated_at)
                             VALUES (:id, :room_id, :user_id, :type, :color, :stroke_width, :fill,
-                                :locked, :group_id, :version, :sort_order, :geometry, :created_at, :updated_at)
+                                :locked, :group_id, :version, :sort_order, :geometry, :changed_fields,
+                                :created_at, :updated_at)
                         """),
                         row,
                     )
@@ -159,76 +161,85 @@ async def websocket_endpoint(
                     shape_id = payload.get("shapeId")
                     changes = payload.get("changes", {})
                     expected_version = payload.get("expectedVersion")
-                    if not shape_id:
+                    if not shape_id or not changes:
                         continue
-
-                    if expected_version is not None:
-                        # 乐观锁检查
-                        r = await session.execute(
-                            text("SELECT version FROM shapes WHERE id = :id"),
-                            {"id": shape_id},
-                        )
-                        row = r.fetchone()
-                        if not row or row[0] != expected_version:
-                            await websocket.send_json({
-                                "type": "shape_conflict",
-                                "userId": "server",
-                                "timestamp": now_ts,
-                                "payload": {"shapeId": shape_id},
-                            })
-                            continue
 
                     # 构建 SET 子句 — 公共列直接设置，几何字段合并到 geometry
                     sets = []
                     params = {"id": shape_id, "now": now_ts}
                     geo_fields = {}
+                    changed_fields = []
                     for k, v in changes.items():
                         if k == 'color':
-                            sets.append("color = :color"); params['color'] = v
+                            sets.append("color = :color"); params['color'] = v; changed_fields.append(k)
                         elif k == 'strokeWidth':
-                            sets.append("stroke_width = :sw"); params['sw'] = v
+                            sets.append("stroke_width = :sw"); params['sw'] = v; changed_fields.append(k)
                         elif k == 'fill':
-                            sets.append("fill = :fill"); params['fill'] = v
+                            sets.append("fill = :fill"); params['fill'] = v; changed_fields.append(k)
                         elif k == 'locked':
-                            sets.append("locked = :l"); params['l'] = v
+                            sets.append("locked = :l"); params['l'] = v; changed_fields.append(k)
                         elif k == 'groupId':
-                            sets.append("group_id = :gid"); params['gid'] = v
-                        elif k == 'x':
-                            geo_fields['x'] = v
-                        elif k == 'y':
-                            geo_fields['y'] = v
-                        elif k == 'width':
-                            geo_fields['width'] = v
-                        elif k == 'height':
-                            geo_fields['height'] = v
-                        elif k == 'radius':
-                            geo_fields['radius'] = v
-                        elif k == 'points':
-                            geo_fields['points'] = v
-                        elif k == 'text':
-                            geo_fields['text'] = v
-                        elif k == 'fontSize':
-                            geo_fields['fontSize'] = v
-                        elif k == 'cornerRadius':
-                            geo_fields['cornerRadius'] = v
-                        elif k == 'skew':
-                            geo_fields['skew'] = v
-                        elif k == 'foldSize':
-                            geo_fields['foldSize'] = v
-                        elif k == 'endArrow':
-                            geo_fields['endArrow'] = v
-                        elif k == 'imageData':
-                            geo_fields['imageData'] = v
+                            sets.append("group_id = :gid"); params['gid'] = v; changed_fields.append(k)
+                        elif k in ('x', 'y', 'width', 'height', 'radius', 'points',
+                                   'text', 'fontSize', 'cornerRadius', 'skew', 'foldSize',
+                                   'endArrow', 'imageData'):
+                            geo_fields[k] = v; changed_fields.append(k)
+
+                    if not sets and not geo_fields:
+                        continue
 
                     if geo_fields:
                         sets.append("geometry = JSON_MERGE_PATCH(geometry, :geo)")
                         params['geo'] = json.dumps(geo_fields, ensure_ascii=False)
 
-                    if sets:
-                        sets.append("version = version + 1")
-                        sets.append("updated_at = :now")
-                        sql = f"UPDATE shapes SET {', '.join(sets)} WHERE id = :id"
-                        await session.execute(text(sql), params)
+                    if expected_version is not None:
+                        # 查询当前版本
+                        r = await session.execute(
+                            text("SELECT version, changed_fields, geometry, color, stroke_width, fill, locked, group_id FROM shapes WHERE id = :id"),
+                            {"id": shape_id},
+                        )
+                        current = r.fetchone()
+                        if not current:
+                            continue
+                        db_version = current[0]
+
+                        if db_version != expected_version:
+                            # 版本不匹配 → 字段级冲突检测
+                            incoming_fields = set(changed_fields)
+                            intermediate_fields = set()
+                            if current[1]:
+                                try:
+                                    intermediate_fields = set(json.loads(current[1]))
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
+
+                            if incoming_fields & intermediate_fields:
+                                # 有字段冲突 → 查询完整 shape 返回给客户端纠正
+                                r2 = await session.execute(
+                                    text("SELECT * FROM shapes WHERE id = :id"),
+                                    {"id": shape_id},
+                                )
+                                full_row = r2.fetchone()
+                                if full_row:
+                                    await websocket.send_json({
+                                        "type": "shape_conflict",
+                                        "userId": "server",
+                                        "timestamp": now_ts,
+                                        "payload": {
+                                            "shapeId": shape_id,
+                                            "shape": _row_to_shape(full_row),
+                                        },
+                                    })
+                                continue
+                            # 无字段冲突 → 继续执行更新（合并到当前版本）
+
+                    # 更新 changed_fields 记录
+                    sets.append("changed_fields = :cf")
+                    params['cf'] = json.dumps(changed_fields, ensure_ascii=False)
+                    sets.append("version = version + 1")
+                    sets.append("updated_at = :now")
+                    sql = f"UPDATE shapes SET {', '.join(sets)} WHERE id = :id"
+                    await session.execute(text(sql), params)
                     await session.commit()
                     await room.broadcast(message, exclude_user_id=userId)
 
@@ -237,30 +248,33 @@ async def websocket_endpoint(
                     for update in updates:
                         shape_id = update.get("shapeId")
                         changes = update.get("changes", {})
-                        if not shape_id:
+                        if not shape_id or not changes:
                             continue
                         sets = []
                         params = {"id": shape_id, "now": now_ts}
                         geo_fields = {}
+                        changed_fields = []
                         for k, v in changes.items():
                             if k == 'color':
-                                sets.append("color = :color"); params['color'] = v
+                                sets.append("color = :color"); params['color'] = v; changed_fields.append(k)
                             elif k == 'strokeWidth':
-                                sets.append("stroke_width = :sw"); params['sw'] = v
+                                sets.append("stroke_width = :sw"); params['sw'] = v; changed_fields.append(k)
                             elif k == 'fill':
-                                sets.append("fill = :fill"); params['fill'] = v
+                                sets.append("fill = :fill"); params['fill'] = v; changed_fields.append(k)
                             elif k == 'locked':
-                                sets.append("locked = :l"); params['l'] = v
+                                sets.append("locked = :l"); params['l'] = v; changed_fields.append(k)
                             elif k == 'groupId':
-                                sets.append("group_id = :gid"); params['gid'] = v
+                                sets.append("group_id = :gid"); params['gid'] = v; changed_fields.append(k)
                             elif k in ('x', 'y', 'width', 'height', 'radius', 'points',
                                         'text', 'fontSize', 'cornerRadius', 'skew', 'foldSize',
                                         'endArrow', 'imageData'):
-                                geo_fields[k] = v
+                                geo_fields[k] = v; changed_fields.append(k)
                         if geo_fields:
                             sets.append("geometry = JSON_MERGE_PATCH(geometry, :geo)")
                             params['geo'] = json.dumps(geo_fields, ensure_ascii=False)
                         if sets:
+                            sets.append("changed_fields = :cf")
+                            params['cf'] = json.dumps(changed_fields, ensure_ascii=False)
                             sets.append("version = version + 1")
                             sets.append("updated_at = :now")
                             sql = f"UPDATE shapes SET {', '.join(sets)} WHERE id = :id"
