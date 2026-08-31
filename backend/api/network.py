@@ -23,16 +23,15 @@ def _get_lan_ip() -> str:
         return "127.0.0.1"
 
 
-# 在模块加载时获取网络信息（兼容 uvicorn reload 子进程）
-LAN_IP = _get_lan_ip()
 PORT = int(os.getenv("PORT", "8000"))
 FRONTEND_PORT = int(os.getenv("FRONTEND_PORT", "3000"))
 
 
+# 每次请求实时获取 LAN IP，避免 WiFi 切换后 IP 过期
 @router.get("/api/network")
 async def get_network_info():
     return {
-        "lanIp": LAN_IP,
+        "lanIp": _get_lan_ip(),
         "port": PORT,
         "frontendPort": FRONTEND_PORT,
     }
