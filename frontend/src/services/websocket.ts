@@ -23,10 +23,18 @@ export function connect(roomId: string, userId: string, userName: string): WebSo
     reconnectTimer = null;
   }
 
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.hostname;
-  const port = import.meta.env.VITE_BACKEND_PORT || '8000';
-  const url = `${protocol}//${host}:${port}/ws/${roomId}?userId=${userId}&userName=${encodeURIComponent(userName)}`;
+  let url: string;
+  if (import.meta.env.DEV) {
+    // 开发模式：直连后端端口
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.hostname;
+    const port = import.meta.env.VITE_BACKEND_PORT || '8000';
+    url = `${protocol}//${host}:${port}/ws/${roomId}?userId=${userId}&userName=${encodeURIComponent(userName)}`;
+  } else {
+    // 生产模式：同源 WebSocket 走 Nginx 反向代理
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    url = `${protocol}//${window.location.host}/ws/${roomId}?userId=${userId}&userName=${encodeURIComponent(userName)}`;
+  }
 
   const ws = new WebSocket(url);
   wsInstance = ws;
@@ -60,8 +68,8 @@ export function connect(roomId: string, userId: string, userName: string): WebSo
     scheduleReconnect(roomId, userId, userName);
   };
 
-  ws.onerror = () => {
-    // onclose will fire after this
+  ws.onerror = (event) => {
+    console.error('[WS] 连接错误，将触发 onclose 进入重连:', event);
   };
 
   return ws;
@@ -133,9 +141,11 @@ function handleMessage(msg: WSMessage): void {
       break;
     }
 
-    case 'user_left':
-      store.removeUser(msg.payload.userId as string);
+    case 'user_left': {
+      const leftUserId = (msg.payload as { userId?: string } | null)?.userId;
+      if (leftUserId) store.removeUser(leftUserId);
       break;
+    }
 
     case 'room_state': {
       const payload = msg.payload as { shapes: never[]; users: never[] };
