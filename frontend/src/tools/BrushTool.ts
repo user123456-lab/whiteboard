@@ -1,18 +1,16 @@
 import { generateUUID } from '../utils/uuid';
-import Konva from 'konva';
 import type { BrushShape } from '../types';
 import type { CanvasState } from '../store/useCanvasStore';
 
 export class BrushTool {
   private isDrawing = false;
   private points: number[] = [];
-  private previewLine: Konva.Line | null = null;
   private currentShapeId: string | null = null;
 
-  onMouseDown(pos: { x: number; y: number }, store: CanvasState, _layer: Konva.Layer): void {
+  onMouseDown(pos: { x: number; y: number }, store: CanvasState, _layer: unknown): void {
     this.isDrawing = true;
     this.points = [pos.x, pos.y];
-    // 立即创建图形到 store，实现实时同步
+    // 立即创建图形到 Shape Layer，实现实时同步
     const shape: BrushShape = {
       id: generateUUID(),
       type: 'brush',
@@ -27,44 +25,25 @@ export class BrushTool {
     store.addShape(shape);
   }
 
-  onMouseMove(pos: { x: number; y: number }, store: CanvasState, layer: Konva.Layer): void {
+  onMouseMove(pos: { x: number; y: number }, store: CanvasState, _layer: unknown): void {
     if (!this.isDrawing) return;
-
     this.points.push(pos.x, pos.y);
-
-    this.previewLine?.destroy();
-    this.previewLine = new Konva.Line({
-      points: this.points,
-      stroke: store.toolColor,
-      strokeWidth: store.toolWidth,
-      tension: 0.5,
-      lineCap: 'round',
-      lineJoin: 'round',
-      globalCompositeOperation: 'source-over',
-    });
-    layer.add(this.previewLine);
-    layer.batchDraw();
-    // 实时更新 store 中的图形，触发 Yjs 同步到对端
+    // 图形已创建到 Shape Layer，持续更新 points 即可实时渲染到画布
     if (this.currentShapeId) {
       store.updateShape(this.currentShapeId, { points: [...this.points] });
     }
   }
 
-  onMouseUp(_pos: { x: number; y: number }, store: CanvasState, layer: Konva.Layer): BrushShape | null {
+  onMouseUp(_pos: { x: number; y: number }, store: CanvasState, _layer: unknown): BrushShape | null {
     this.isDrawing = false;
-    this.previewLine?.destroy();
-    this.previewLine = null;
-    layer.batchDraw();
-
     if (this.points.length < 4) {
-      // 点数太少，删除已创建的图形
+      // 点数太少（只有起点没有移动），删除已创建的图形
       if (this.currentShapeId) store.deleteShape(this.currentShapeId);
       this.points = [];
       this.currentShapeId = null;
       return null;
     }
-
-    // 图形已在 onMouseDown 创建并持续更新，此处返回 null 避免重复添加
+    // 图形已在 onMouseDown 创建并持续更新，不需要重复添加
     this.points = [];
     this.currentShapeId = null;
     return null;
@@ -73,8 +52,6 @@ export class BrushTool {
   cancel(): void {
     this.isDrawing = false;
     this.points = [];
-    this.previewLine?.destroy();
-    this.previewLine = null;
     this.currentShapeId = null;
   }
 }
