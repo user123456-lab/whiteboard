@@ -57,6 +57,7 @@ export interface CanvasState {
 
   addShape: (shape: Shape) => void;
   updateShape: (id: string, data: Partial<Shape>) => void;
+  updateShapeLocal: (id: string, data: Partial<Shape>) => void;
   deleteShape: (id: string) => void;
   toggleLock: (shapeId: string) => boolean;
   batchApplySweepResult: (result: {
@@ -153,6 +154,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       },
     });
     sendMessage(getWs(), 'shape_created', { shape }, store.userId);
+  },
+
+  // 仅更新本地状态，不广播不推 undo（拖拽中间帧用）
+  updateShapeLocal: (id, data) => {
+    set((s) => ({
+      shapes: s.shapes.map((sh) =>
+        sh.id === id ? { ...sh, ...data } as Shape : sh,
+      ),
+    }));
   },
 
   updateShape: (id, data) => {

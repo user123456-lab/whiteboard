@@ -132,9 +132,9 @@ export class ToolManager {
       // Text tool: click anywhere → create new text and enter edit mode.
       // Existing text: hover shows dashed border, double-click enters edit (handled by Stage onDblClick).
       if (store.activeTool === 'text') {
-        // Click outside while editing → close editor, don't create new
+        // 正在编辑中点击画布 → 先触发 textarea blur 保存文本，再关闭编辑器
         if (store.editingTextId) {
-          store.setEditingTextId(null);
+          (document.activeElement as HTMLElement)?.blur();
           return;
         }
         // Click on existing text → skip (handled by double-click)

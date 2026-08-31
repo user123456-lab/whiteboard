@@ -42,6 +42,31 @@ export class SelectTool {
       if (!latest || latest.locked) continue;
 
       if ('x' in latest && 'y' in latest) {
+        // 拖拽中间帧仅本地更新，不广播，避免多人拖拽同一图形时闪烁
+        store.updateShapeLocal(latest.id, {
+          x: entry.startX + dx,
+          y: entry.startY + dy,
+        });
+      }
+      if ('points' in latest && Array.isArray(latest.points) && entry.startPoints) {
+        const offsetPoints = entry.startPoints.map((p, i) => p + (i % 2 === 0 ? dx : dy));
+        store.updateShapeLocal(latest.id, { points: offsetPoints });
+      }
+    }
+  }
+
+  onMouseUp(_pos: { x: number; y: number }, store: CanvasState, _layer: Konva.Layer): null {
+    this.isDragging = false;
+
+    // 拖拽结束，广播最终位置（推 undo + 发送 WebSocket）
+    const dx = _pos.x - this.dragStartX;
+    const dy = _pos.y - this.dragStartY;
+
+    for (const entry of this.draggedShapes) {
+      const latest = store.shapes.find(s => s.id === entry.shape.id);
+      if (!latest || latest.locked) continue;
+
+      if ('x' in latest && 'y' in latest) {
         store.updateShape(latest.id, {
           x: entry.startX + dx,
           y: entry.startY + dy,
@@ -52,10 +77,7 @@ export class SelectTool {
         store.updateShape(latest.id, { points: offsetPoints });
       }
     }
-  }
 
-  onMouseUp(_pos: { x: number; y: number }, _store: CanvasState, _layer: Konva.Layer): null {
-    this.isDragging = false;
     return null;
   }
 

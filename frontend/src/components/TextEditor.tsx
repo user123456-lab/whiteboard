@@ -37,14 +37,16 @@ export function TextEditor({ shape, stage }: TextEditorProps) {
         return;
       }
       const store = useCanvasStore.getState();
-      const text = e.target.value.trim();
-      // 仅当文本确实改变时才提交更新
-      if (text && text !== shape.text) {
+      const text = e.target.value;
+      // 从 store 读取最新值对比，避免闭包捕获过期数据
+      const latest = store.shapes.find(s => s.id === shape.id);
+      const prevText = latest && latest.type === 'text' ? latest.text : shape.text;
+      if (text !== prevText) {
         store.updateShape(shape.id, { text, fontSize: shape.fontSize ?? 18 });
       }
       store.setEditingTextId(null);
     },
-    [shape.id, shape.fontSize, shape.text],
+    [shape.id, shape.fontSize],
   );
 
   const handleKeyDown = useCallback(

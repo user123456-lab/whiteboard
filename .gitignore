@@ -9,3 +9,8 @@ backend/data/*.json.tmp
 backend/data/*.json.corrupted
 .claude/
 .superpowers/
+
+# Nginx 运行时文件
+tools/nginx/
+*.log
+nginx.pid
