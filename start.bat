@@ -30,7 +30,7 @@ if not exist "%PROJECT_ROOT%\frontend\dist\index.html" (
 REM --- 2. Start backend ---
 echo [2/3] Starting backend on 127.0.0.1:8000...
 start "Whiteboard-Backend" /min cmd /c ^
-  "cd /d %PROJECT_ROOT%\backend && set WHITEBOARD_ENV=production && python run.py >> backend.log 2>&1"
+  "cd /d %PROJECT_ROOT%\backend && python run.py --prod >> backend.log 2>&1"
 
 REM Health check: poll until backend is ready (max 15s)
 echo Waiting for backend...

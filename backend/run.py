@@ -1,4 +1,5 @@
 import os
+import sys
 import socket
 from pathlib import Path
 from dotenv import load_dotenv
@@ -19,8 +20,10 @@ def get_lan_ip() -> str:
 
 
 if __name__ == "__main__":
-    # 加载环境文件（生产模式加载 .env.production，否则加载 .env）
-    env_mode = os.getenv("WHITEBOARD_ENV", "development")
+    # 命令行 --prod 优先，否则读环境变量 WHITEBOARD_ENV
+    is_prod = "--prod" in sys.argv
+    env_mode = "production" if is_prod else os.getenv("WHITEBOARD_ENV", "development")
+
     if env_mode == "production":
         load_dotenv(Path(__file__).parent / ".env.production")
     else:
