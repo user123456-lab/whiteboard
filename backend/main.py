@@ -1,4 +1,15 @@
 """FastAPI 主入口 — WebSocket 路由 + MySQL 持久化"""
+import os
+import sys
+from pathlib import Path
+from dotenv import load_dotenv
+
+# 在导入其他模块前加载环境变量（api/network.py 模块级常量依赖这些变量）
+is_prod = "--prod" in sys.argv
+env_file = Path(__file__).parent / (".env.production" if is_prod else ".env")
+if env_file.exists():
+    load_dotenv(env_file, override=True)
+
 import json
 import time
 import asyncio

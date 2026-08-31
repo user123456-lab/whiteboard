@@ -20,14 +20,10 @@ def get_lan_ip() -> str:
 
 
 if __name__ == "__main__":
-    # 命令行 --prod 优先，否则读环境变量 WHITEBOARD_ENV
+    # 环境变量由 main.py 模块级 load_dotenv 统一处理
+    # 此处仅解析 --prod 控制 reload 和 host
     is_prod = "--prod" in sys.argv
     env_mode = "production" if is_prod else os.getenv("WHITEBOARD_ENV", "development")
-
-    if env_mode == "production":
-        load_dotenv(Path(__file__).parent / ".env.production")
-    else:
-        load_dotenv()
 
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8000"))
