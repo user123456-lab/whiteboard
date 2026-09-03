@@ -1,7 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
 
-set PROJECT_ROOT=D:\Projects\whiteboard
+REM Project root: derived from script location (not hardcoded)
+set PROJECT_ROOT=%~dp0
+if "%PROJECT_ROOT:~-1%"=="\" set PROJECT_ROOT=%PROJECT_ROOT:~0,-1%
 set NGINX_HOME=%PROJECT_ROOT%\tools\nginx
 set NGINX_PATH=%NGINX_HOME%\nginx.exe
 set NGINX_CONF=%PROJECT_ROOT%\nginx.conf
@@ -12,8 +14,8 @@ echo   Whiteboard Launcher
 echo ============================================
 echo.
 
-REM --- 1. Build frontend if dist/ missing ---
-if not exist "%PROJECT_ROOT%\frontend\dist\index.html" (
+REM --- 1. Build frontend if nginx html/ missing ---
+if not exist "%NGINX_HOME%\html\index.html" (
     echo [1/3] Building frontend...
     cd /d "%PROJECT_ROOT%\frontend"
     call npm run build
@@ -24,7 +26,7 @@ if not exist "%PROJECT_ROOT%\frontend\dist\index.html" (
     )
     echo [1/3] Build complete.
 ) else (
-    echo [1/3] dist/ exists, skip build.
+    echo [1/3] html/ exists, skip build.
 )
 
 REM --- 2. Start backend ---
@@ -60,7 +62,7 @@ REM Check if Nginx is already running
 tasklist /fi "IMAGENAME eq nginx.exe" 2>nul | find /i "nginx.exe" >nul
 if !errorlevel! equ 0 (
     echo Nginx is running, hot reloading...
-    "%NGINX_PATH%" -s reload
+    "%NGINX_PATH%" -s reload -p "%NGINX_HOME%"
 ) else (
     "%NGINX_PATH%" -p "%NGINX_HOME%" -c "%NGINX_CONF%"
 )

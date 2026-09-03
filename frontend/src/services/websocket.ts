@@ -25,13 +25,13 @@ export function connect(roomId: string, userId: string, userName: string): WebSo
 
   let url: string;
   if (import.meta.env.DEV) {
-    // 开发模式：直连后端端口
+    // 开发模式：直连后端端口（端口由 frontend/.env 的 VITE_BACKEND_PORT 配置，默认 8000）
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.hostname;
     const port = import.meta.env.VITE_BACKEND_PORT || '8000';
     url = `${protocol}//${host}:${port}/ws/${roomId}?userId=${userId}&userName=${encodeURIComponent(userName)}`;
   } else {
-    // 生产模式：同源 WebSocket 走 Nginx 反向代理
+    // 生产模式：同源 WebSocket 走 Nginx 反向代理（nginx.conf 的 /ws/ 转发到后端）
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     url = `${protocol}//${window.location.host}/ws/${roomId}?userId=${userId}&userName=${encodeURIComponent(userName)}`;
   }

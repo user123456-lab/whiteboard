@@ -1,8 +1,11 @@
 @echo off
 setlocal enabledelayedexpansion
 
-set PROJECT_ROOT=D:\Projects\whiteboard
-set NGINX_PATH=%PROJECT_ROOT%\tools\nginx\nginx.exe
+REM Project root: derived from script location (not hardcoded)
+set PROJECT_ROOT=%~dp0
+if "%PROJECT_ROOT:~-1%"=="\" set PROJECT_ROOT=%PROJECT_ROOT:~0,-1%
+set NGINX_HOME=%PROJECT_ROOT%\tools\nginx
+set NGINX_PATH=%NGINX_HOME%\nginx.exe
 
 echo Stopping Whiteboard...
 
@@ -24,7 +27,8 @@ if !errorlevel! equ 0 (
 REM --- 2. Stop Nginx ---
 echo [2/2] Stopping Nginx...
 if exist "%NGINX_PATH%" (
-    "%NGINX_PATH%" -s quit 2>nul
+    REM Keep in sync with start.bat's -p prefix so nginx.pid is found
+    "%NGINX_PATH%" -p "%NGINX_HOME%" -s quit 2>nul
     if !errorlevel! equ 0 (
         echo Nginx stopped.
     ) else (

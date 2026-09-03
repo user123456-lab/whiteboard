@@ -459,7 +459,7 @@ export class ToolManager {
       return;
     }
 
-    // Batch all store mutations — Yjs auto-syncs the entire batch
+    // 批量提交所有状态变更（一次 apply，随后由 store 统一触发同步/广播）
     store.batchApplySweepResult({
       shapesToUpdate: result.shapesToUpdate,
       shapesToCreate: result.shapesToCreate,

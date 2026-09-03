@@ -1,6 +1,6 @@
 import { generateUUID } from '../utils/uuid';
 import { useRef, useEffect, useCallback, useState } from 'react';
-import { Stage, Layer, Line, Rect, Circle, Arrow, Text, Transformer, Image as KonvaImage, Shape as KonvaShape } from 'react-konva';
+import { Stage, Layer, Circle, Transformer } from 'react-konva';
 import type Konva from 'konva';
 import { useCanvasStore } from '../store/useCanvasStore';
 import { ToolManager } from '../managers/ToolManager';
@@ -9,20 +9,9 @@ import { TextEditor } from './TextEditor';
 import { GridBackground } from './GridBackground';
 import type { Shape, ImageShape } from '../types';
 import { getEdgePoint } from '../types';
+import { ShapeRenderer } from './ShapeRenderer';
 
 const toolManager = new ToolManager();
-
-function measureTextSize(text: string, fontSize: number): { width: number; height: number } {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return { width: text.length * fontSize * 0.6, height: fontSize * 1.4 };
-  ctx.font = `${fontSize}px sans-serif`;
-  const metrics = ctx.measureText(text || 'Text');
-  return {
-    width: Math.max(40, metrics.width),
-    height: fontSize * 1.4,
-  };
-}
 
 function buildEraserCursor(radius: number): string {
   const size = Math.max(24, radius * 2 + 8);
@@ -31,39 +20,6 @@ function buildEraserCursor(radius: number): string {
     + `<circle cx="${cx}" cy="${cx}" r="${radius}" fill="none" stroke="white" stroke-width="1.5" opacity="0.9"/>`
     + `</svg>`;
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${cx} ${cx}, crosshair`;
-}
-
-function ImageRenderer({ shape }: { shape: ImageShape }) {
-  const [img, setImg] = useState<HTMLImageElement | null>(null);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    setError(false);
-    setImg(null);
-    const image = new window.Image();
-    image.onload = () => setImg(image);
-    image.onerror = () => setError(true);
-    image.src = shape.imageData;
-    return () => { image.onload = null; image.onerror = null; };
-  }, [shape.imageData]);
-
-  if (error) {
-    return (
-      <Rect x={shape.x} y={shape.y} width={shape.width} height={shape.height}
-        fill="#333" stroke="#666" strokeWidth={1} dash={[4, 4]} />
-    );
-  }
-  if (!img) return null;
-  return (
-    <KonvaImage
-      image={img}
-      x={shape.x}
-      y={shape.y}
-      width={shape.width}
-      height={shape.height}
-      listening={true}
-    />
-  );
 }
 
 export function WhiteboardCanvas() {
@@ -173,7 +129,7 @@ export function WhiteboardCanvas() {
         .map((id) => stage.findOne('#' + id))
         .filter((n): n is Konva.Shape => {
           if (!n) return false;
-          const s = useCanvasStore.getState().shapes.find((sh) => sh.id === n.id());
+          const s = shapes.find((sh) => sh.id === n.id());
           if (!s) return false;
           // 连接线和锁定图形不附加 Transformer
           if (s.type === 'connector' || s.locked) return false;
@@ -185,7 +141,7 @@ export function WhiteboardCanvas() {
       transformerRef.current.nodes([]);
       transformerRef.current.getLayer()?.batchDraw();
     }
-  }, [selectedIds]);
+  }, [selectedIds, shapes]);
 
   // Drag-and-drop image files onto the canvas
   useEffect(() => {
@@ -293,346 +249,66 @@ export function WhiteboardCanvas() {
     return () => window.removeEventListener('paste', handlePaste);
   }, []);
 
-  const renderShape = useCallback((shape: Shape) => {
-    const common = {
-      id: shape.id,
-      key: shape.id,
-      stroke: shape.color,
-      strokeWidth: shape.strokeWidth,
-    };
-
+  // ── 视口裁剪：计算图形 AABB ──
+  const getShapeBounds = useCallback((shape: Shape) => {
     switch (shape.type) {
-      case 'brush':
-        return (
-          <>
-            <Line
-              {...common}
-              points={shape.points}
-              tension={0}
-              lineCap="round"
-              lineJoin="round"
-              globalCompositeOperation="source-over"
-            />
-            {shape.locked && (
-              <Text
-                x={shape.points[0] - 2}
-                y={shape.points[1] - 16}
-                text="🔒"
-                fontSize={14}
-                fill="#F59E0B"
-                listening={false}
-              />
-            )}
-          </>
-        );
-      case 'rectangle':
-        return (
-          <>
-            <Rect
-              {...common}
-              x={shape.x}
-              y={shape.y}
-              width={shape.width}
-              height={shape.height}
-              fill={shape.fill || 'transparent'}
-            />
-            {shape.locked && (
-              <Text
-                x={shape.x - 2}
-                y={shape.y - 16}
-                text="🔒"
-                fontSize={14}
-                fill="#F59E0B"
-                listening={false}
-              />
-            )}
-          </>
-        );
-      case 'roundedRect':
-        return (
-          <>
-            <Rect
-              {...common}
-              x={shape.x}
-              y={shape.y}
-              width={shape.width}
-              height={shape.height}
-              cornerRadius={shape.cornerRadius ?? 10}
-              fill={shape.fill || 'transparent'}
-            />
-            {shape.locked && (
-              <Text
-                x={shape.x - 2}
-                y={shape.y - 16}
-                text="🔒"
-                fontSize={14}
-                fill="#F59E0B"
-                listening={false}
-              />
-            )}
-          </>
-        );
-      case 'diamond': {
-        const cx = shape.x + shape.width / 2;
-        const cy = shape.y + shape.height / 2;
-        return (
-          <>
-            <Line
-              {...common}
-              points={[cx, shape.y, shape.x + shape.width, cy, cx, shape.y + shape.height, shape.x, cy]}
-              closed
-              fill={shape.fill || 'transparent'}
-            />
-            {shape.locked && (
-              <Text
-                x={shape.x - 2}
-                y={shape.y - 16}
-                text="🔒"
-                fontSize={14}
-                fill="#F59E0B"
-                listening={false}
-              />
-            )}
-          </>
-        );
-      }
-      case 'parallelogram': {
-        const skew = (shape as Shape & { skew?: number }).skew ?? shape.width * 0.2;
-        return (
-          <>
-            <Line
-              {...common}
-              points={[
-                shape.x + skew, shape.y,
-                shape.x + shape.width, shape.y,
-                shape.x + shape.width - skew, shape.y + shape.height,
-                shape.x, shape.y + shape.height,
-              ]}
-              closed
-              fill={shape.fill || 'transparent'}
-            />
-            {shape.locked && (
-              <Text
-                x={shape.x - 2}
-                y={shape.y - 16}
-                text="🔒"
-                fontSize={14}
-                fill="#F59E0B"
-                listening={false}
-              />
-            )}
-          </>
-        );
-      }
-      case 'cylinder':
-        return (
-          <>
-            <KonvaShape
-              {...common}
-              x={shape.x}
-              y={shape.y}
-              width={shape.width}
-              height={shape.height}
-              sceneFunc={(ctx, shapeKonva) => {
-                const w = shapeKonva.width();
-                const h = shapeKonva.height();
-                const arcH = Math.min(15, h * 0.2);
-                const cx = w / 2;
-                // 1. 底面完整椭圆（柱体后方）
-                ctx.beginPath();
-                ctx.ellipse(cx, h - arcH, w / 2, arcH, 0, 0, Math.PI * 2);
-                ctx.fillStrokeShape(shapeKonva);
-                // 2. 柱体表面：左壁→底弧→右壁→顶弧→闭合
-                ctx.beginPath();
-                ctx.moveTo(0, arcH);
-                ctx.ellipse(cx, arcH, w / 2, arcH, 0, Math.PI, Math.PI * 2, false);
-                ctx.lineTo(w, h - arcH);
-                ctx.ellipse(cx, h - arcH, w / 2, arcH, 0, 0, Math.PI, false);
-                ctx.closePath();
-                ctx.fillStrokeShape(shapeKonva);
-                // 3. 顶面完整椭圆（柱体前方）
-                ctx.beginPath();
-                ctx.ellipse(cx, arcH, w / 2, arcH, 0, 0, Math.PI * 2);
-                ctx.fillStrokeShape(shapeKonva);
-              }}
-              fill={shape.fill || 'transparent'}
-            />
-            {shape.locked && (
-              <Text
-                x={shape.x - 2}
-                y={shape.y - 16}
-                text="🔒"
-                fontSize={14}
-                fill="#F59E0B"
-                listening={false}
-              />
-            )}
-          </>
-        );
-      case 'document': {
-        const fold = (shape as Shape & { foldSize?: number }).foldSize ?? 20;
-        return (
-          <>
-            <Line
-              {...common}
-              points={[
-                shape.x, shape.y,
-                shape.x + shape.width - fold, shape.y,
-                shape.x + shape.width, shape.y + fold,
-                shape.x + shape.width, shape.y + shape.height,
-                shape.x, shape.y + shape.height,
-              ]}
-              closed
-              fill={shape.fill || 'transparent'}
-            />
-            {/* Fold crease */}
-            <Line
-              points={[
-                shape.x + shape.width - fold, shape.y,
-                shape.x + shape.width - fold, shape.y + fold,
-                shape.x + shape.width, shape.y + fold,
-              ]}
-              stroke={shape.color}
-              strokeWidth={shape.strokeWidth * 0.7}
-              listening={false}
-            />
-            {shape.locked && (
-              <Text
-                x={shape.x - 2}
-                y={shape.y - 16}
-                text="🔒"
-                fontSize={14}
-                fill="#F59E0B"
-                listening={false}
-              />
-            )}
-          </>
-        );
-      }
+      case 'rectangle': case 'roundedRect': case 'diamond':
+      case 'parallelogram': case 'cylinder': case 'document':
+        return { x: shape.x, y: shape.y, w: shape.width, h: shape.height };
       case 'circle':
-        return (
-          <>
-            <Circle
-              {...common}
-              x={shape.x}
-              y={shape.y}
-              radius={shape.radius}
-              fill={shape.fill || 'transparent'}
-            />
-            {shape.locked && (
-              <Text
-                x={shape.x - shape.radius - 4}
-                y={shape.y - shape.radius - 16}
-                text="🔒"
-                fontSize={14}
-                fill="#F59E0B"
-                listening={false}
-              />
-            )}
-          </>
-        );
-      case 'arrow':
-        return (
-          <>
-            <Arrow
-              {...common}
-              points={shape.points}
-              fill={shape.fill || shape.color}
-              pointerLength={10}
-              pointerWidth={8}
-            />
-            {shape.locked && (
-              <Text
-                x={shape.points[0] - 2}
-                y={shape.points[1] - 16}
-                text="🔒"
-                fontSize={14}
-                fill="#F59E0B"
-                listening={false}
-              />
-            )}
-          </>
-        );
+        return { x: shape.x - shape.radius, y: shape.y - shape.radius,
+                 w: shape.radius * 2, h: shape.radius * 2 };
       case 'text': {
-        const isOwner = shape.userId === useCanvasStore.getState().userId;
-        const isEditing = useCanvasStore.getState().editingTextId === shape.id;
-        return (
-          <>
-            <Text
-              {...common}
-              x={shape.x}
-              y={shape.y}
-              text={shape.text}
-              fontSize={shape.fontSize ?? 18}
-              fill={shape.color}
-              stroke={undefined}
-              onMouseEnter={isOwner && !isEditing ? () => setHoveredTextId(shape.id) : undefined}
-              onMouseLeave={isOwner ? () => setHoveredTextId(null) : undefined}
-            />
-            {/* Dashed border on hover (only for owner, not while editing) */}
-            {hoveredTextIdRef.current === shape.id && isOwner && !isEditing && (() => {
-              const size = measureTextSize(shape.text, shape.fontSize ?? 18);
-              return (
-                <Rect
-                  x={shape.x - 4}
-                  y={shape.y - 4}
-                  width={size.width + 8}
-                  height={size.height + 8}
-                  stroke="#6B7280"
-                  strokeWidth={1}
-                  dash={[4, 4]}
-                  listening={false}
-                />
-              );
-            })()}
-            {shape.locked && (
-              <Text
-                x={shape.x - 2}
-                y={shape.y - 16}
-                text="🔒"
-                fontSize={14}
-                fill="#F59E0B"
-                listening={false}
-              />
-            )}
-          </>
-        );
+        const fs = shape.fontSize ?? 18;
+        return { x: shape.x, y: shape.y, w: shape.text.length * fs * 0.6, h: fs * 1.4 };
       }
-      case 'image':
-        return <ImageRenderer key={shape.id} shape={shape as ImageShape} />;
-      case 'connector': {
-        const allShapes = useCanvasStore.getState().shapes;
-        const fromShape = allShapes.find((s) => s.id === shape.fromShapeId);
-        const toShape = allShapes.find((s) => s.id === shape.toShapeId);
-        if (!fromShape || !toShape) return null;
-        const from = getEdgePoint(fromShape, shape.fromEdge);
-        const to = getEdgePoint(toShape, shape.toEdge);
-        return (
-          <>
-            <Arrow
-              {...common}
-              points={[from.x, from.y, to.x, to.y]}
-              fill={common.stroke}
-              pointerLength={10}
-              pointerWidth={8}
-            />
-            {shape.locked && (
-              <Text
-                x={from.x - 2}
-                y={from.y - 16}
-                text="🔒"
-                fontSize={14}
-                fill="#F59E0B"
-                listening={false}
-              />
-            )}
-          </>
-        );
+      case 'arrow': {
+        const [x1, y1, x2, y2] = shape.points;
+        return { x: Math.min(x1, x2), y: Math.min(y1, y2),
+                 w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
       }
-      default:
-        return null;
+      case 'brush': {
+        if (shape.points.length < 4) return null;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (let i = 0; i < shape.points.length; i += 2) {
+          const px = shape.points[i], py = shape.points[i + 1];
+          if (px < minX) minX = px; if (py < minY) minY = py;
+          if (px > maxX) maxX = px; if (py > maxY) maxY = py;
+        }
+        return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+      }
+      default: return null;
     }
   }, []);
+
+  // ── 预计算连接线端点（修复合约：端点移动时正确触发重渲染）──
+  const shapesWithConnectors = useCallback((allShapes: Shape[]) => {
+    return allShapes.map(shape => {
+      if (shape.type !== 'connector') return { shape, connectorFrom: undefined, connectorTo: undefined };
+      const fromShape = allShapes.find(s => s.id === (shape as typeof shape & { fromShapeId: string }).fromShapeId);
+      const toShape = allShapes.find(s => s.id === (shape as typeof shape & { toShapeId: string }).toShapeId);
+      const from = fromShape ? getEdgePoint(fromShape, (shape as typeof shape & { fromEdge: 'top' }).fromEdge) : undefined;
+      const to = toShape ? getEdgePoint(toShape, (shape as typeof shape & { toEdge: 'top' }).toEdge) : undefined;
+      return { shape, connectorFrom: from, connectorTo: to };
+    });
+  }, []);
+
+  // ── 视口裁剪过滤（带 100px 容差避免边缘闪烁）──
+  const MARGIN = 100;
+  const viewportLeft = (-stageX - MARGIN) / stageScale;
+  const viewportTop = (-stageY - MARGIN) / stageScale;
+  const viewportRight = (-stageX + stageSize.width + MARGIN) / stageScale;
+  const viewportBottom = (-stageY + stageSize.height + MARGIN) / stageScale;
+
+  const visibleEntries = shapesWithConnectors(shapes).filter(({ shape }) => {
+    const b = getShapeBounds(shape);
+    if (!b) return true;
+    return !(b.x + b.w < viewportLeft || b.x > viewportRight ||
+             b.y + b.h < viewportTop || b.y > viewportBottom);
+  });
+
+  const currentUserId = useCanvasStore(s => s.userId);
+  const currentEditingId = useCanvasStore(s => s.editingTextId);
 
   return (
     <>
@@ -802,8 +478,22 @@ export function WhiteboardCanvas() {
         <GridBackground />
       </Layer>
 
-      {/* Shape Layer */}
-      <Layer>{shapes.map(renderShape)}</Layer>
+      {/* Shape Layer（视口裁剪 + memo 化渲染） */}
+      <Layer>
+        {visibleEntries.map(({ shape, connectorFrom, connectorTo }) => (
+          <ShapeRenderer
+            key={shape.id}
+            shape={shape}
+            isOwner={shape.userId === currentUserId}
+            isEditing={currentEditingId === shape.id}
+            showTextBorder={hoveredTextId === shape.id}
+            connectorFrom={connectorFrom}
+            connectorTo={connectorTo}
+            onTextHoverEnter={() => setHoveredTextId(shape.id)}
+            onTextHoverLeave={() => setHoveredTextId(null)}
+          />
+        ))}
+      </Layer>
 
       {/* Preview Layer */}
       <Layer ref={previewLayerRef} />

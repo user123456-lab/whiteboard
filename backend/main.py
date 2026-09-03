@@ -189,8 +189,19 @@ async def websocket_endpoint(
                         continue
 
                     if geo_fields:
-                        sets.append("geometry = JSON_MERGE_PATCH(geometry, :geo)")
-                        params['geo'] = json.dumps(geo_fields, ensure_ascii=False)
+                        # 兼容 MySQL 5.7：该版本无 JSON_MERGE_PATCH（8.0.17+ 才有），
+                        # 改为 Python 端读取现有 geometry 并合并后整体写回
+                        r = await session.execute(
+                            text("SELECT geometry FROM shapes WHERE id = :id"),
+                            {"id": shape_id},
+                        )
+                        geo_row = r.fetchone()
+                        if geo_row is None:
+                            continue  # 图形不存在，跳过本次更新
+                        geo = json.loads(geo_row[0]) if geo_row[0] else {}
+                        geo.update(geo_fields)
+                        sets.append("geometry = :geo")
+                        params['geo'] = json.dumps(geo, ensure_ascii=False)
 
                     if expected_version is not None:
                         # 查询当前版本
@@ -270,8 +281,18 @@ async def websocket_endpoint(
                                         'endArrow', 'imageData'):
                                 geo_fields[k] = v; changed_fields.append(k)
                         if geo_fields:
-                            sets.append("geometry = JSON_MERGE_PATCH(geometry, :geo)")
-                            params['geo'] = json.dumps(geo_fields, ensure_ascii=False)
+                            # 兼容 MySQL 5.7：Python 端合并 geometry（原因同上）
+                            r = await session.execute(
+                                text("SELECT geometry FROM shapes WHERE id = :id"),
+                                {"id": shape_id},
+                            )
+                            geo_row = r.fetchone()
+                            if geo_row is None:
+                                continue  # 图形不存在，跳过本次更新
+                            geo = json.loads(geo_row[0]) if geo_row[0] else {}
+                            geo.update(geo_fields)
+                            sets.append("geometry = :geo")
+                            params['geo'] = json.dumps(geo, ensure_ascii=False)
                         if sets:
                             sets.append("changed_fields = :cf")
                             params['cf'] = json.dumps(changed_fields, ensure_ascii=False)

@@ -6,20 +6,20 @@
 
 ## 项目概述
 
-实时多人协作绘图白板 v2.0，支持 14 种图形、13 种工具、连接线系统、Yjs CRDT 同步和协作房间系统。
+实时多人协作绘图白板，支持 12+ 种图形、13 种工具、连接线系统、WebSocket JSON 广播同步和协作房间系统。
 
 ## 技术栈
 
 | 层     | 技术                                                |
 | ------ | --------------------------------------------------- |
-| 前端   | React 18 · TypeScript · Vite · TailwindCSS · Konva.js · Zustand · Yjs · Lucide React |
+| 前端   | React 18 · TypeScript · Vite · TailwindCSS · Konva.js · Zustand · Lucide React |
 | 后端   | FastAPI · WebSocket · Python                        |
-| 同步   | Yjs (Y.Doc + Y.Array + Y.UndoManager) + WebSocket 广播 |
-| 持久化 | JSON 文件原子写入，shutdown 保存                     |
+| 同步   | WebSocket (JSON 消息广播)                            |
+| 持久化 | MySQL（SQLAlchemy 异步 + aiomysql）                  |
 
 ## 关键路径
 
-- 项目根目录：`D:\Projects\whiteboard\`
+- 项目根目录：本仓库根目录（仓库克隆到哪就在哪，不依赖固定盘符）
 - 前端源码：`frontend/src/`
 - 后端源码：`backend/`
 
@@ -52,11 +52,11 @@ cd backend && pip install -r requirements.txt
 whiteboard/
 ├── frontend/
 │   ├── src/
-│   │   ├── types/index.ts             # 类型定义 (14 Shape + 13 Tool + WS协议 + getEdgePoint)
-│   │   ├── store/useCanvasStore.ts    # Zustand 全局状态（shapes, users, tools, Yjs委托）
+│   │   ├── types/index.ts             # 类型定义 (12+ Shape + 13 Tool + WS协议)
+│   │   ├── store/useCanvasStore.ts    # Zustand 全局状态（shapes, users, tools, cursors）
 │   │   ├── services/
 │   │   │   ├── websocket.ts           # WebSocket 客户端（连接、重连、消息路由）
-│   │   │   └── yjsSync.ts            # Yjs CRDT 同步层（Y.Doc + Y.Array + UndoManager）
+│   │   │   └── network.ts            # REST 网络信息获取（/api/network）
 │   │   ├── managers/ToolManager.ts    # 事件路由 + 键盘快捷键 + 连接线拖拽锚点
 │   │   ├── tools/
 │   │   │   ├── BrushTool.ts           # 手绘自由线条
@@ -83,10 +83,11 @@ whiteboard/
 │   └── [config files]
 ├── backend/
 │   ├── main.py                        # FastAPI + WebSocket 路由（含 batch_update 支持）
+│   ├── database.py                    # MySQL 连接池/建表/数据转换（SQLAlchemy 异步）
 │   ├── room_manager.py                # 房间管理（Room, RoomManager, 乐观锁）
 │   ├── run.py                         # uvicorn 启动入口
-│   ├── test_e2e.py                    # E2E 协议测试（12项）
-│   └── data/                          # JSON 持久化数据
+│   └── test_e2e.py                    # E2E 协议测试（7项）
+├── .env / .env.production             # 后端配置（端口 + MySQL 连接串）
 ├── docs/
 │   └── superpowers/specs/             # 设计规格文档
 ├── README.md
@@ -184,7 +185,7 @@ type ShapeType = 'brush' | 'rectangle' | 'roundedRect' | 'diamond' | 'parallelog
 - **圆柱体精确橡皮擦**: 椭圆弧轮廓分解为 48 段
 - **菱形/平行四边形精确碰撞**: 凸多边形-圆碰撞检测（叉积+边距离）
 - **Resize 比例缩放**: skew/cornerRadius/foldSize 随宽高同比缩放
-- **Yjs CRDT**: Y.Doc + Y.Array shapes + Y.UndoManager，自动合并并发编辑
+- **实时同步**: WebSocket JSON 消息广播（乐观更新 + LWW 最后写入获胜）
 - **多选**: Shift+点击 + 多拖拽 + 多节点Transformer + 批量删除/锁定
 - **编组**: Ctrl+G编组 / Ctrl+Shift+G解组 + 广播 shape_updated_batch
 - **对齐分布**: 6向对齐（左/中/右 + 上/中/下）
@@ -196,21 +197,21 @@ type ShapeType = 'brush' | 'rectangle' | 'roundedRect' | 'diamond' | 'parallelog
 - **房间系统**: 6位码创建/加入 + 复制链接 + 在线用户列表
 - **远程光标**: 彩色光标 + 名称标签，100ms节流
 - **画布**: Ctrl+滚轮缩放（以光标为中心）+ 中键平移 + 网格/点阵背景
-- **数据持久化**: JSON文件原子写入 + shutdown保存 + 断线重连指数退避
+- **数据持久化**: MySQL 数据库实时落库 + 断线重连指数退避
 - **复制粘贴**: Ctrl+C/V + 20px偏移
 
 ## 关键设计决策
 
-- **同步策略**: Yjs CRDT（Y.Doc + Y.Array）处理并发编辑，WebSocket 仅作传输层
-- **撤销**: Y.UndoManager 全局 undo/redo（已知限制：远程变更不录入 undo 栈）
+- **同步策略**: 广播式同步（服务器存储转发，乐观更新 + LWW），WebSocket 传输 JSON
+- **撤销**: undoOwn/redoOwn（仅撤销自己创建的图形，保留 z-order）
 - **橡皮擦**: 单击→删除图形（需所有权）；长按扫过→线段-圆裁剪（画笔），轮廓分解（几何图形）
-- **持久化**: JSON 文件，最后一个用户离开时原子写入，新用户进入时加载
+- **持久化**: MySQL 数据库，图形创建/更新/删除时实时落库，房间状态从库中恢复
 - **断线重连**: 指数退避 1s→2s→…→30s，最多 10 次
 - **乐观锁**: server 端 version 字段 + shape_conflict 通知
 
 ## 已知局限
 
-1. Y.UndoManager 的 undo 栈仅本地（远程变更不录入）
+1. undoOwn 只回退自己创建的图形（协作时不会误删他人图形，但无法撤销他人操作）
 2. groupShapes 广播 N 个独立 shape_updated（非原子批量），但通过 shape_updated_batch 改善
 3. 光标消息仅携带 {x,y}（userName/color 依赖顶层字段）
 4. roundedRect 橡皮擦用矩形边框（非圆角精确轮廓），精度损失小

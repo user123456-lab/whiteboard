@@ -44,6 +44,48 @@ def make_msg(msg_type, user_id, payload):
         "payload": payload,
     })
 
+
+# 测试专用房间：固定 ID 会跨运行残留到 MySQL，不清理会导致
+# shape_created 撞主键（IntegrityError）使测试失败/假通过
+TEST_ROOMS = [
+    "testroom",
+    "testroom2",
+    "persist-test-2",
+    "testroom-v2shapes",
+    "testroom-conn",
+    "testroom-batch",
+]
+
+
+def cleanup_test_data():
+    """启动前清理历史测试数据，确保每次重跑从干净状态开始"""
+    try:
+        import os
+        import pymysql
+        from dotenv import load_dotenv
+        load_dotenv()
+        conn = pymysql.connect(
+            host=os.getenv("DB_HOST", "localhost"),
+            port=int(os.getenv("DB_PORT", "3306")),
+            user=os.getenv("DB_USER", "root"),
+            password=os.getenv("DB_PASS", ""),
+            database=os.getenv("DB_NAME", "whiteboard"),
+        )
+        cur = conn.cursor()
+        placeholders = ",".join(["%s"] * len(TEST_ROOMS))
+        cur.execute(
+            f"DELETE FROM shapes WHERE room_id IN ({placeholders})",
+            TEST_ROOMS,
+        )
+        conn.commit()
+        n = cur.rowcount
+        conn.close()
+        if n:
+            print(f"[cleanup] 已清理 {n} 条历史测试数据")
+    except Exception as e:
+        print(f"[cleanup] 跳过数据库清理: {e}")
+
+
 async def test_room_lifecycle():
     """Test room creation, join, leave"""
     print("\n── Room Lifecycle ──")
@@ -384,6 +426,8 @@ async def main():
     global passed, failed
     print("Whiteboard E2E Protocol Test")
     print("=" * 40)
+
+    cleanup_test_data()  # 先清残留，再开始测试
 
     for test_fn, name in [
         (test_room_lifecycle, "Room Lifecycle"),
